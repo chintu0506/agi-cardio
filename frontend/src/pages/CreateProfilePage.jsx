@@ -7,6 +7,7 @@ export default function CreateProfilePage({
 }) {
   return (
     <section className="panel create-profile-page">
+      <p className="topbar-kicker">Patient Onboarding</p>
       <h2>Create New Profile</h2>
       <p className="muted">This page is dedicated only to profile creation. After saving, your new name appears in profile options automatically.</p>
       <div className="profile-create-grid">
@@ -23,7 +24,7 @@ export default function CreateProfilePage({
         <label><span>Conditions</span><input value={profileForm.existing_conditions} onChange={(e) => setProfileForm((p) => ({ ...p, existing_conditions: e.target.value }))} /></label>
         <label><span>Notes</span><input value={profileForm.notes} onChange={(e) => setProfileForm((p) => ({ ...p, notes: e.target.value }))} /></label>
       </div>
-      <div className="actions">
+      <div className="actions create-profile-actions">
         <button className="btn primary" onClick={createCompleteProfile} disabled={creatingProfile}>
           {creatingProfile ? 'Creating...' : 'Create Complete Profile'}
         </button>

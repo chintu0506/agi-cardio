@@ -24,59 +24,59 @@
   ],
   "models": {
     "master": {
-      "accuracy": 88.9,
-      "auc": 0.948,
+      "accuracy": 88.8,
+      "auc": 0.949,
       "train_accuracy": 94.4,
-      "cv_auc": 0.95,
-      "selected_model": "stacking",
-      "calibration": "sigmoid",
-      "brier": 0.0847,
-      "log_loss": 0.2869,
-      "threshold": 0.5
-    },
-    "cad": {
-      "accuracy": 91.1,
-      "auc": 0.972,
-      "train_accuracy": 95.6,
-      "cv_auc": 0.976,
+      "cv_auc": 0.954,
       "selected_model": "stacking",
       "calibration": "isotonic",
-      "brier": 0.0668,
-      "log_loss": 0.2173,
-      "threshold": 0.53
-    },
-    "hf": {
-      "accuracy": 90.0,
-      "auc": 0.96,
-      "train_accuracy": 96.1,
-      "cv_auc": 0.964,
-      "selected_model": "stacking",
-      "calibration": "isotonic",
-      "brier": 0.0706,
-      "log_loss": 0.2316,
-      "threshold": 0.43
-    },
-    "arr": {
-      "accuracy": 86.8,
-      "auc": 0.941,
-      "train_accuracy": 94.2,
-      "cv_auc": 0.952,
-      "selected_model": "stacking",
-      "calibration": "sigmoid",
-      "brier": 0.092,
-      "log_loss": 0.2892,
+      "brier": 0.0848,
+      "log_loss": 0.2933,
       "threshold": 0.48
     },
-    "mi": {
-      "accuracy": 94.3,
-      "auc": 0.982,
-      "train_accuracy": 96.7,
-      "cv_auc": 0.977,
+    "cad": {
+      "accuracy": 90.5,
+      "auc": 0.972,
+      "train_accuracy": 95.1,
+      "cv_auc": 0.975,
       "selected_model": "stacking",
       "calibration": "sigmoid",
-      "brier": 0.0426,
-      "log_loss": 0.1469,
-      "threshold": 0.44
+      "brier": 0.065,
+      "log_loss": 0.2148,
+      "threshold": 0.35
+    },
+    "hf": {
+      "accuracy": 90.2,
+      "auc": 0.96,
+      "train_accuracy": 95.7,
+      "cv_auc": 0.963,
+      "selected_model": "stacking",
+      "calibration": "none",
+      "brier": 0.0727,
+      "log_loss": 0.2425,
+      "threshold": 0.56
+    },
+    "arr": {
+      "accuracy": 85.0,
+      "auc": 0.942,
+      "train_accuracy": 93.0,
+      "cv_auc": 0.951,
+      "selected_model": "stacking",
+      "calibration": "none",
+      "brier": 0.0928,
+      "log_loss": 0.292,
+      "threshold": 0.32
+    },
+    "mi": {
+      "accuracy": 93.8,
+      "auc": 0.982,
+      "train_accuracy": 97.4,
+      "cv_auc": 0.976,
+      "selected_model": "stacking",
+      "calibration": "none",
+      "brier": 0.0427,
+      "log_loss": 0.147,
+      "threshold": 0.53
     }
   },
   "feature_importances": {

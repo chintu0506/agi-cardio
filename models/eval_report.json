@@ -1,0 +1,330 @@
+{
+  "generated_at": "2026-02-15T14:35:19.943860+00:00",
+  "feature_count": 21,
+  "models": {
+    "master": {
+      "accuracy": 0.8877,
+      "roc_auc": 0.949,
+      "pr_auc": 0.9411,
+      "brier": 0.0848,
+      "log_loss": 0.2933,
+      "confusion_matrix": {
+        "tn": 452,
+        "fp": 72,
+        "fn": 52,
+        "tp": 528
+      },
+      "calibration_curve": [
+        {
+          "mean_predicted": 0.0062,
+          "fraction_positive": 0.0146
+        },
+        {
+          "mean_predicted": 0.0273,
+          "fraction_positive": 0.0204
+        },
+        {
+          "mean_predicted": 0.0775,
+          "fraction_positive": 0.0521
+        },
+        {
+          "mean_predicted": 0.2251,
+          "fraction_positive": 0.1712
+        },
+        {
+          "mean_predicted": 0.45,
+          "fraction_positive": 0.5091
+        },
+        {
+          "mean_predicted": 0.7144,
+          "fraction_positive": 0.6842
+        },
+        {
+          "mean_predicted": 0.8928,
+          "fraction_positive": 0.9138
+        },
+        {
+          "mean_predicted": 0.9644,
+          "fraction_positive": 0.9776
+        },
+        {
+          "mean_predicted": 0.9808,
+          "fraction_positive": 0.9541
+        },
+        {
+          "mean_predicted": 0.9919,
+          "fraction_positive": 0.9747
+        }
+      ],
+      "threshold": 0.48,
+      "selected_model": "stacking",
+      "calibration": "isotonic"
+    },
+    "cad": {
+      "accuracy": 0.905,
+      "roc_auc": 0.9724,
+      "pr_auc": 0.9709,
+      "brier": 0.065,
+      "log_loss": 0.2148,
+      "confusion_matrix": {
+        "tn": 536,
+        "fp": 88,
+        "fn": 26,
+        "tp": 550
+      },
+      "calibration_curve": [
+        {
+          "mean_predicted": 0.005,
+          "fraction_positive": 0.0
+        },
+        {
+          "mean_predicted": 0.0107,
+          "fraction_positive": 0.0
+        },
+        {
+          "mean_predicted": 0.0265,
+          "fraction_positive": 0.025
+        },
+        {
+          "mean_predicted": 0.0849,
+          "fraction_positive": 0.0833
+        },
+        {
+          "mean_predicted": 0.3006,
+          "fraction_positive": 0.2417
+        },
+        {
+          "mean_predicted": 0.637,
+          "fraction_positive": 0.625
+        },
+        {
+          "mean_predicted": 0.8809,
+          "fraction_positive": 0.8667
+        },
+        {
+          "mean_predicted": 0.9631,
+          "fraction_positive": 0.9667
+        },
+        {
+          "mean_predicted": 0.9862,
+          "fraction_positive": 0.9917
+        },
+        {
+          "mean_predicted": 0.9947,
+          "fraction_positive": 1.0
+        }
+      ],
+      "threshold": 0.35,
+      "selected_model": "stacking",
+      "calibration": "sigmoid"
+    },
+    "hf": {
+      "accuracy": 0.9025,
+      "roc_auc": 0.96,
+      "pr_auc": 0.9287,
+      "brier": 0.0727,
+      "log_loss": 0.2425,
+      "confusion_matrix": {
+        "tn": 770,
+        "fp": 46,
+        "fn": 71,
+        "tp": 313
+      },
+      "calibration_curve": [
+        {
+          "mean_predicted": 0.0131,
+          "fraction_positive": 0.0
+        },
+        {
+          "mean_predicted": 0.0179,
+          "fraction_positive": 0.0083
+        },
+        {
+          "mean_predicted": 0.0244,
+          "fraction_positive": 0.0167
+        },
+        {
+          "mean_predicted": 0.0303,
+          "fraction_positive": 0.0333
+        },
+        {
+          "mean_predicted": 0.0383,
+          "fraction_positive": 0.025
+        },
+        {
+          "mean_predicted": 0.0716,
+          "fraction_positive": 0.15
+        },
+        {
+          "mean_predicted": 0.3432,
+          "fraction_positive": 0.3583
+        },
+        {
+          "mean_predicted": 0.811,
+          "fraction_positive": 0.675
+        },
+        {
+          "mean_predicted": 0.9558,
+          "fraction_positive": 0.95
+        },
+        {
+          "mean_predicted": 0.9783,
+          "fraction_positive": 0.9833
+        }
+      ],
+      "threshold": 0.56,
+      "selected_model": "stacking",
+      "calibration": "none"
+    },
+    "arr": {
+      "accuracy": 0.85,
+      "roc_auc": 0.942,
+      "pr_auc": 0.8808,
+      "brier": 0.0928,
+      "log_loss": 0.292,
+      "confusion_matrix": {
+        "tn": 716,
+        "fp": 124,
+        "fn": 56,
+        "tp": 304
+      },
+      "calibration_curve": [
+        {
+          "mean_predicted": 0.0127,
+          "fraction_positive": 0.0
+        },
+        {
+          "mean_predicted": 0.0186,
+          "fraction_positive": 0.0
+        },
+        {
+          "mean_predicted": 0.0247,
+          "fraction_positive": 0.0
+        },
+        {
+          "mean_predicted": 0.0341,
+          "fraction_positive": 0.0167
+        },
+        {
+          "mean_predicted": 0.0549,
+          "fraction_positive": 0.0667
+        },
+        {
+          "mean_predicted": 0.1271,
+          "fraction_positive": 0.225
+        },
+        {
+          "mean_predicted": 0.3601,
+          "fraction_positive": 0.3583
+        },
+        {
+          "mean_predicted": 0.6867,
+          "fraction_positive": 0.5417
+        },
+        {
+          "mean_predicted": 0.8888,
+          "fraction_positive": 0.8333
+        },
+        {
+          "mean_predicted": 0.9638,
+          "fraction_positive": 0.9583
+        }
+      ],
+      "threshold": 0.32,
+      "selected_model": "stacking",
+      "calibration": "none"
+    },
+    "mi": {
+      "accuracy": 0.9375,
+      "roc_auc": 0.9815,
+      "pr_auc": 0.9397,
+      "brier": 0.0427,
+      "log_loss": 0.147,
+      "confusion_matrix": {
+        "tn": 905,
+        "fp": 31,
+        "fn": 44,
+        "tp": 220
+      },
+      "calibration_curve": [
+        {
+          "mean_predicted": 0.0028,
+          "fraction_positive": 0.0
+        },
+        {
+          "mean_predicted": 0.005,
+          "fraction_positive": 0.0
+        },
+        {
+          "mean_predicted": 0.0073,
+          "fraction_positive": 0.0
+        },
+        {
+          "mean_predicted": 0.0108,
+          "fraction_positive": 0.0
+        },
+        {
+          "mean_predicted": 0.0164,
+          "fraction_positive": 0.0
+        },
+        {
+          "mean_predicted": 0.0273,
+          "fraction_positive": 0.0333
+        },
+        {
+          "mean_predicted": 0.0649,
+          "fraction_positive": 0.0417
+        },
+        {
+          "mean_predicted": 0.2906,
+          "fraction_positive": 0.3417
+        },
+        {
+          "mean_predicted": 0.82,
+          "fraction_positive": 0.8
+        },
+        {
+          "mean_predicted": 0.9821,
+          "fraction_positive": 0.9833
+        }
+      ],
+      "threshold": 0.53,
+      "selected_model": "stacking",
+      "calibration": "none"
+    }
+  },
+  "master_risk_tier_distribution": {
+    "LOW": {
+      "count": 479,
+      "fraction": 0.4339
+    },
+    "MODERATE": {
+      "count": 121,
+      "fraction": 0.1096
+    },
+    "HIGH": {
+      "count": 78,
+      "fraction": 0.0707
+    },
+    "CRITICAL": {
+      "count": 426,
+      "fraction": 0.3859
+    }
+  },
+  "master_positive_rate": 0.5254,
+  "master_training_source": {
+    "uci_dir": "/Users/chintuboppana/Downloads/heart+disease",
+    "uci_rows": 920,
+    "hf_support_path": "/Users/chintuboppana/Downloads/heart_failure_clinical_records_dataset.csv",
+    "hf_support_rows": 299,
+    "saheart_path": "/Users/chintuboppana/Downloads/SAHeart.csv",
+    "family_history_rate": 0.416
+  },
+  "master_training_blend": {
+    "mode": "hybrid_real_synthetic",
+    "real_rows": 920,
+    "synthetic_rows": 4600,
+    "real_fraction": 0.167,
+    "synth_factor": 5.0
+  }
+}

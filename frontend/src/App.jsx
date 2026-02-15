@@ -5,6 +5,44 @@ import PortalHeader from './components/PortalHeader'
 import CreateProfilePage from './pages/CreateProfilePage'
 
 const API_BASE_ENV = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:5000'
+const LIVE_ECG_REFRESH_MS = 700
+
+const DEFAULT_ECG_PROMPT = {
+  durationSec: 10,
+  samplingRate: 500,
+  lead: 'II',
+  noiseLevel: 0.02,
+  arrhythmiaMode: 'auto',
+  outputFormat: 'waveform',
+}
+
+const ECG_PRESETS = {
+  normal: {
+    label: 'Normal',
+    form: { age: 25, sex: 1, thalach: 72, trestbps: 120, chol: 180, restecg: 0, exang: 0, oldpeak: 0.1 },
+    prompt: { durationSec: 10, samplingRate: 500, lead: 'II', noiseLevel: 0.01, arrhythmiaMode: 'none' },
+  },
+  arrhythmia: {
+    label: 'Arrhythmia',
+    form: { age: 60, sex: 0, thalach: 120, restecg: 1, exang: 1, oldpeak: 2.2 },
+    prompt: { durationSec: 15, samplingRate: 500, lead: 'II', noiseLevel: 0.03, arrhythmiaMode: 'high' },
+  },
+  cad: {
+    label: 'CAD',
+    form: { age: 55, sex: 1, thalach: 98, trestbps: 150, chol: 280, restecg: 1, exang: 1, oldpeak: 2.0 },
+    prompt: { durationSec: 12, samplingRate: 500, lead: 'V5', noiseLevel: 0.02, arrhythmiaMode: 'mild' },
+  },
+  mi: {
+    label: 'MI',
+    form: { age: 62, sex: 1, thalach: 105, restecg: 1, exang: 1, oldpeak: 3.8, troponin: 1.2 },
+    prompt: { durationSec: 10, samplingRate: 500, lead: 'III', noiseLevel: 0.02, arrhythmiaMode: 'high' },
+  },
+  hf: {
+    label: 'Heart Failure',
+    form: { age: 70, thalach: 88, trestbps: 155, restecg: 2, oldpeak: 1.6, bnp: 650, ejection_fraction: 35 },
+    prompt: { durationSec: 12, samplingRate: 360, lead: 'V6', noiseLevel: 0.03, arrhythmiaMode: 'mild' },
+  },
+}
 
 const FIELD_SECTIONS = [
   { title: 'Demographics & Symptoms', fields: ['age', 'sex', 'cp', 'exang', 'family_history'] },
@@ -81,6 +119,8 @@ const DEFAULT_PROFILE_FORM = {
   full_name: '', age: '', sex: '', dob: '', phone: '', email: '', address: '', blood_group: '',
   emergency_contact: '', allergies: '', existing_conditions: '', notes: '',
 }
+const SUPPORTED_IMAGE_MIME = new Set(['image/png', 'image/jpeg', 'image/jpg'])
+const SUPPORTED_IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg'])
 
 function toPayloadWithDefaults(form) {
   const out = {}
@@ -88,7 +128,6 @@ function toPayloadWithDefaults(form) {
     const v = form[k]
     const resolved = (v === '' || v === null || v === undefined) ? Number(defaultVal) : Number(v)
     if (k === 'fbs') {
-      out.fbs_mgdl = resolved
       // Model expects binary FBS flag: 1 when fasting blood sugar is above 120 mg/dL.
       out[k] = resolved > 120 ? 1 : 0
       continue
@@ -222,6 +261,26 @@ function escHtml(value) {
     .replaceAll("'", '&#39;')
 }
 
+function isSupportedDiagnosticImage(file) {
+  if (!file) return false
+  const mime = String(file.type || '').toLowerCase()
+  if (SUPPORTED_IMAGE_MIME.has(mime)) return true
+  const name = String(file.name || '').toLowerCase()
+  const dot = name.lastIndexOf('.')
+  const ext = dot >= 0 ? name.slice(dot) : ''
+  return SUPPORTED_IMAGE_EXT.has(ext)
+}
+
+function isBlobLikeUpload(value) {
+  return typeof Blob !== 'undefined' && value instanceof Blob
+}
+
+function resolveImageUploadFile(fileOverride, stateFile) {
+  if (isBlobLikeUpload(fileOverride)) return fileOverride
+  if (isBlobLikeUpload(stateFile)) return stateFile
+  return null
+}
+
 async function fetchJsonSafe(url, options) {
   const response = await fetch(url, options)
   const text = await response.text()
@@ -248,21 +307,106 @@ async function authJsonWith405Fallback(url, payload) {
   return fetchJsonSafe(`${url}?${qs.toString()}`)
 }
 
+async function postImageSummaryWithFieldFallback(url, file, fields, onApiBaseDetected) {
+  let lastData = null
+  let lastStatus = 0
+  if (!isBlobLikeUpload(file)) {
+    return {
+      response: { ok: false, status: 400 },
+      data: { error: 'Invalid image input. Please choose PNG/JPG/JPEG file again.' },
+    }
+  }
+  const parseJson = async (response) => {
+    try {
+      return await response.json()
+    } catch {
+      return null
+    }
+  }
+  const isMissingImageError = (response, data) => {
+    if (response.status !== 400) return false
+    const message = String(data?.error || '').toLowerCase()
+    return message.includes('missing file field') || message.includes('no image received')
+  }
+  const inferUploadMimeType = (uploadedFile) => {
+    const mime = String(uploadedFile?.type || '').toLowerCase()
+    if (mime) return mime
+    const name = String(uploadedFile?.name || '').toLowerCase()
+    if (name.endsWith('.png')) return 'image/png'
+    if (name.endsWith('.jpeg') || name.endsWith('.jpg')) return 'image/jpeg'
+    return 'application/octet-stream'
+  }
+
+  const tryRawBodyUpload = async (targetUrl) => {
+    const mime = inferUploadMimeType(file)
+    const headers = mime ? { 'Content-Type': mime } : {}
+    const response = await fetch(targetUrl, {
+      method: 'POST',
+      headers,
+      body: file,
+    })
+    const data = await parseJson(response)
+    lastData = data
+    lastStatus = response.status
+    return { response, data }
+  }
+
+  const tryUrl = async (targetUrl) => {
+    for (const field of fields) {
+      const formData = new FormData()
+      formData.append(field, file, file?.name || `${field}.jpg`)
+      const response = await fetch(targetUrl, { method: 'POST', body: formData })
+      const data = await parseJson(response)
+      if (response.ok) return { response, data, missingFieldError: false }
+      lastData = data
+      lastStatus = response.status
+      if (!isMissingImageError(response, data)) {
+        return { response, data, missingFieldError: false }
+      }
+    }
+    const rawAttempt = await tryRawBodyUpload(targetUrl)
+    if (rawAttempt.response.ok) return { ...rawAttempt, missingFieldError: false }
+    return { ...rawAttempt, missingFieldError: isMissingImageError(rawAttempt.response, rawAttempt.data) }
+  }
+
+  const first = await tryUrl(url)
+  if (first.response.ok || !first.missingFieldError) return first
+
+  const altBase = await discoverBackendBase()
+  if (typeof onApiBaseDetected === 'function') onApiBaseDetected(altBase)
+  if (altBase && !url.startsWith(altBase)) {
+    const endpoint = (() => {
+      try {
+        return new URL(url).pathname
+      } catch {
+        return '/api/ecg-image-summary'
+      }
+    })()
+    const second = await tryUrl(`${altBase}${endpoint}`)
+    if (second.response.ok) return second
+  }
+  return { response: { ok: false, status: lastStatus }, data: lastData }
+}
+
 async function discoverBackendBase() {
   const candidates = [API_BASE_ENV]
   for (let port = 5000; port <= 5040; port += 1) {
     const candidate = `http://127.0.0.1:${port}`
     if (!candidates.includes(candidate)) candidates.push(candidate)
   }
+  let fallbackBase = null
   for (const base of candidates) {
     try {
       const { response, data } = await fetchJsonSafe(`${base}/api/health`)
-      if (response.ok && data?.status === 'ok') return base
+      if (response.ok && data?.status === 'ok') {
+        if (!fallbackBase) fallbackBase = base
+        if (data?.image_upload_field_fallback) return base
+      }
     } catch {
       // continue
     }
   }
-  return API_BASE_ENV
+  return fallbackBase || API_BASE_ENV
 }
 
 function App() {
@@ -290,6 +434,7 @@ function App() {
   const [health, setHealth] = useState(null)
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
+  const [successMessage, setSuccessMessage] = useState('')
   const [loadingPredict, setLoadingPredict] = useState(false)
   const [creatingProfile, setCreatingProfile] = useState(false)
   const [chatLoading, setChatLoading] = useState(false)
@@ -298,6 +443,14 @@ function App() {
   const [ecgImageFile, setEcgImageFile] = useState(null)
   const [ecgImageSummary, setEcgImageSummary] = useState(null)
   const [ecgImageAnalyzing, setEcgImageAnalyzing] = useState(false)
+  const [assistantEcgSignal, setAssistantEcgSignal] = useState([])
+  const [assistantEcgMeta, setAssistantEcgMeta] = useState({ hr: null, sampleRate: null, durationSec: null })
+  const [assistantEcgLoading, setAssistantEcgLoading] = useState(false)
+  const [assistantEcgBootstrapped, setAssistantEcgBootstrapped] = useState(false)
+  const [assistantEcgExpanded, setAssistantEcgExpanded] = useState(false)
+  const [assistantEcgLive, setAssistantEcgLive] = useState(false)
+  const [assistantEcgScroll, setAssistantEcgScroll] = useState(0)
+  const [assistantEcgPrompt, setAssistantEcgPrompt] = useState(DEFAULT_ECG_PROMPT)
   const [mriImageFile, setMriImageFile] = useState(null)
   const [mriImageSummary, setMriImageSummary] = useState(null)
   const [mriImageAnalyzing, setMriImageAnalyzing] = useState(false)
@@ -359,6 +512,43 @@ function App() {
   const [analyzerDragTarget, setAnalyzerDragTarget] = useState('')
   const [patientView, setPatientView] = useState('workspace')
   const [portalPage, setPortalPage] = useState('workspace')
+  const [diagnosisStage, setDiagnosisStage] = useState('inputs')
+  const navigatePortalPage = useCallback((nextPage) => {
+    setPortalPage(nextPage)
+    if (nextPage === 'diagnosis') setDiagnosisStage('inputs')
+    if (viewerRole === 'patient' && patientView === 'create-profile') {
+      setPatientView('workspace')
+    }
+  }, [viewerRole, patientView])
+  const navigateWorkflowStep = useCallback((step) => {
+    if (step.page === 'diagnosis') {
+      setPortalPage('diagnosis')
+      setDiagnosisStage(step.stage || 'inputs')
+      if (viewerRole === 'patient' && patientView === 'create-profile') setPatientView('workspace')
+      return
+    }
+    navigatePortalPage(step.page)
+  }, [navigatePortalPage, patientView, viewerRole])
+  const navigateTopPage = useCallback((target) => {
+    if (viewerRole === 'patient' && patientView === 'create-profile') setPatientView('workspace')
+    if (target === 'workspace') {
+      setPortalPage('workspace')
+      return
+    }
+    if (target === 'inputs') {
+      setPortalPage('diagnosis')
+      setDiagnosisStage('inputs')
+      return
+    }
+    if (target === 'diagnosis') {
+      setPortalPage('diagnosis')
+      setDiagnosisStage('diagnosis')
+      return
+    }
+    if (target === 'report') {
+      setPortalPage('assistant')
+    }
+  }, [patientView, viewerRole])
 
   const activeProfile = useMemo(
     () => profiles.find((p) => String(p.id) === String(activeProfileId)) || null,
@@ -381,10 +571,67 @@ function App() {
     () => normalizeEcgSignal(selectedDoctorSummary?.ecg_signal),
     [selectedDoctorSummary],
   )
+  const assistantVisibleEcg = useMemo(() => {
+    const diagnosisSignal = normalizeEcgSignal(result?.ecg_signal)
+    if (portalPage === 'assistant' && assistantEcgSignal.length > 0) {
+      if (!assistantEcgLive || assistantEcgSignal.length < 2) return assistantEcgSignal
+      const shift = Math.abs(assistantEcgScroll) % assistantEcgSignal.length
+      if (!shift) return assistantEcgSignal
+      return [...assistantEcgSignal.slice(shift), ...assistantEcgSignal.slice(0, shift)]
+    }
+    if (diagnosisSignal.length > 0) return diagnosisSignal
+    if (assistantEcgSignal.length > 0) return assistantEcgSignal
+    if (selectedDoctorSummaryEcg.length > 0) return selectedDoctorSummaryEcg
+    return []
+  }, [assistantEcgLive, assistantEcgScroll, assistantEcgSignal, portalPage, result?.ecg_signal, selectedDoctorSummaryEcg])
+  const assistantDisplayHr = useMemo(() => {
+    const fromResultForm = Number(form?.thalach)
+    if (normalizeEcgSignal(result?.ecg_signal).length > 0 && Number.isFinite(fromResultForm)) return Math.round(fromResultForm)
+    if (Number.isFinite(Number(assistantEcgMeta.hr))) return Math.round(Number(assistantEcgMeta.hr))
+    return null
+  }, [assistantEcgMeta.hr, form?.thalach, result?.ecg_signal])
   const doctorPendingAppointments = useMemo(
     () => (doctorAppointments || []).filter((a) => String(a?.status || '').toLowerCase() === 'pending'),
     [doctorAppointments],
   )
+  const hasClinicalSubject = viewerRole === 'doctor'
+    ? Boolean(doctorPatientData?.patient?.user_id)
+    : Boolean(activeProfileId)
+  const stepItems = useMemo(() => {
+    const roleLabel = viewerRole === 'doctor' ? 'Patient' : 'Profile'
+    const hasDiagnosis = Boolean(result)
+    const activeStep = (() => {
+      if (portalPage === 'workspace') return 1
+      if (portalPage === 'diagnosis') return diagnosisStage === 'diagnosis' ? 3 : 2
+      if (portalPage === 'assistant') return 4
+      return 1
+    })()
+    return [
+      { id: 1, label: roleLabel, done: hasClinicalSubject, active: activeStep === 1, page: 'workspace', stage: null },
+      { id: 2, label: 'Inputs', done: hasClinicalSubject && (portalPage !== 'workspace' || hasDiagnosis), active: activeStep === 2, page: 'diagnosis', stage: 'inputs' },
+      { id: 3, label: 'Diagnosis', done: hasDiagnosis, active: activeStep === 3, page: 'diagnosis', stage: 'diagnosis' },
+      { id: 4, label: 'Report', done: hasDiagnosis && portalPage === 'assistant', active: activeStep === 4, page: 'assistant', stage: null },
+    ]
+  }, [viewerRole, hasClinicalSubject, portalPage, diagnosisStage, result])
+  const metricCards = useMemo(() => {
+    if (!result) return []
+    const ef = Number(form?.ejection_fraction)
+    const troponin = Number(form?.troponin)
+    const bnp = Number(form?.bnp)
+    const safe = (v, suffix = '') => (Number.isFinite(Number(v)) ? `${Number(v).toFixed(1)}${suffix}` : '--')
+    const asPct = (v) => safe(v, '%')
+    const efTone = Number.isFinite(ef) ? (ef < 40 ? 'critical' : ef < 55 ? 'caution' : 'normal') : 'info'
+    const trTone = Number.isFinite(troponin) ? (troponin > 0.5 ? 'critical' : troponin > 0.04 ? 'caution' : 'normal') : 'info'
+    const bnpTone = Number.isFinite(bnp) ? (bnp > 400 ? 'critical' : bnp > 100 ? 'caution' : 'normal') : 'info'
+    return [
+      { label: 'Overall Risk', value: asPct(result.master_probability), tone: 'info' },
+      { label: 'Raw Model', value: asPct(result.raw_model_probability), tone: 'info' },
+      { label: 'Clinical Severity', value: asPct(result.clinical_severity_score), tone: 'info' },
+      { label: 'Ejection Fraction', value: Number.isFinite(ef) ? `${ef.toFixed(0)}%` : '--', tone: efTone },
+      { label: 'Troponin-I', value: Number.isFinite(troponin) ? `${troponin.toFixed(2)} ng/mL` : '--', tone: trTone },
+      { label: 'BNP', value: Number.isFinite(bnp) ? `${bnp.toFixed(0)} pg/mL` : '--', tone: bnpTone },
+    ]
+  }, [result, form])
 
   const loadProfiles = useCallback(async (base, tokenOverride) => {
     const token = tokenOverride || authToken
@@ -574,12 +821,76 @@ function App() {
 
   useEffect(() => {
     setPortalPage('workspace')
+    setDiagnosisStage('inputs')
+    setAssistantEcgSignal([])
+    setAssistantEcgMeta({ hr: null, sampleRate: null, durationSec: null })
+    setAssistantEcgBootstrapped(false)
+    setAssistantEcgLive(false)
+    setAssistantEcgPrompt(DEFAULT_ECG_PROMPT)
   }, [viewerRole, authUser?.user_id])
+
+  useEffect(() => {
+    if (!successMessage) return undefined
+    const timer = setTimeout(() => setSuccessMessage(''), 2600)
+    return () => clearTimeout(timer)
+  }, [successMessage])
+
+  useEffect(() => {
+    if (!assistantEcgExpanded) return undefined
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setAssistantEcgExpanded(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [assistantEcgExpanded])
+
+  useEffect(() => {
+    if (portalPage !== 'assistant') return
+    if (assistantEcgBootstrapped) return
+    if (assistantVisibleEcg.length > 1) return
+    generateAssistantEcgSignal('auto')
+  }, [assistantEcgBootstrapped, assistantVisibleEcg.length, portalPage])
+
+  useEffect(() => {
+    if (portalPage === 'assistant') return
+    if (assistantEcgLive) setAssistantEcgLive(false)
+  }, [assistantEcgLive, portalPage])
+
+  useEffect(() => {
+    if (!assistantEcgLive) return undefined
+    if (portalPage !== 'assistant') return undefined
+    const timer = setInterval(() => {
+      generateAssistantEcgSignal('live')
+    }, LIVE_ECG_REFRESH_MS)
+    return () => clearInterval(timer)
+  }, [assistantEcgLive, portalPage, form, result?.master_probability, apiBase, assistantEcgPrompt])
+
+  useEffect(() => {
+    if (!assistantEcgLive) {
+      setAssistantEcgScroll(0)
+      return undefined
+    }
+    if (portalPage !== 'assistant') return undefined
+    if (assistantEcgSignal.length < 2) return undefined
+    const timer = setInterval(() => {
+      const sampleRate = Number(assistantEcgMeta.sampleRate || assistantEcgPrompt.samplingRate || 300)
+      const step = Math.max(1, Math.round(Math.max(120, sampleRate) * 0.01))
+      setAssistantEcgScroll((prev) => {
+        const next = prev - step
+        return next < 0 ? (assistantEcgSignal.length + next) : next
+      })
+    }, 120)
+    return () => clearInterval(timer)
+  }, [assistantEcgLive, portalPage, assistantEcgSignal.length, assistantEcgMeta.sampleRate, assistantEcgPrompt.samplingRate])
 
   function authHeaders(extra = {}) {
     const headers = { ...extra }
     if (authToken) headers.Authorization = `Bearer ${authToken}`
     return headers
+  }
+
+  function showSuccess(message) {
+    setSuccessMessage(String(message || '').trim())
   }
 
   function switchAuthMode(mode) {
@@ -1168,8 +1479,8 @@ function App() {
     setAnalyzerDragTarget('')
     const file = e.dataTransfer?.files?.[0] || null
     if (!file) return
-    if (!(file.type || '').startsWith('image/')) {
-      setError(`Drop a valid image file for ${label}.`)
+    if (!isSupportedDiagnosticImage(file)) {
+      setError(`Use PNG/JPG/JPEG image for ${label}.`)
       return
     }
     setter(file)
@@ -1198,6 +1509,86 @@ function App() {
     setPatientView('create-profile')
   }
 
+  function applyEcgPreset(presetId) {
+    const preset = ECG_PRESETS[presetId]
+    if (!preset) return
+    setForm((prev) => ({ ...prev, ...preset.form }))
+    setAssistantEcgPrompt((prev) => ({ ...prev, ...preset.prompt }))
+    setError('')
+  }
+
+  function exportAssistantEcgCsv() {
+    const signal = normalizeEcgSignal(assistantVisibleEcg)
+    if (signal.length < 2) {
+      setError('Generate ECG signal first, then export CSV.')
+      return
+    }
+    const duration = Number(assistantEcgMeta.durationSec || assistantEcgPrompt.durationSec || 10)
+    const sampleRate = Number(assistantEcgMeta.sampleRate || assistantEcgPrompt.samplingRate || 500)
+    const lines = ['index,time_sec,value_mv']
+    for (let i = 0; i < signal.length; i += 1) {
+      const t = (duration > 0 && signal.length > 1) ? (i * duration / (signal.length - 1)) : (i / Math.max(sampleRate, 1))
+      lines.push(`${i},${t.toFixed(6)},${Number(signal[i]).toFixed(6)}`)
+    }
+    const blob = new Blob([`${lines.join('\n')}\n`], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `ecg_signal_${Date.now()}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  async function generateAssistantEcgSignal(reason = 'manual') {
+    if (assistantEcgLoading) return
+    setAssistantEcgLoading(true)
+    if (reason === 'manual' || reason === 'image-analysis') setError('')
+    try {
+      const payload = toPayloadWithDefaults(form)
+      const riskSource = Number(result?.master_probability)
+      const normalizedRisk = Number.isFinite(riskSource) ? riskSource : 42
+      const durationSec = Math.max(3, Math.min(30, Number(assistantEcgPrompt.durationSec || 10)))
+      const samplingRate = Math.max(120, Math.min(1000, Number(assistantEcgPrompt.samplingRate || 500)))
+      const lead = String(assistantEcgPrompt.lead || 'II').trim().toUpperCase()
+      const noiseLevel = Math.max(0, Math.min(0.2, Number(assistantEcgPrompt.noiseLevel || 0)))
+      const arrhythmiaMode = String(assistantEcgPrompt.arrhythmiaMode || 'auto')
+      const qs = new URLSearchParams({
+        age: String(Number(payload?.age ?? DEFAULT_FORM.age)),
+        hr: String(Number(payload?.thalach ?? DEFAULT_FORM.thalach)),
+        restecg: String(Number(payload?.restecg ?? DEFAULT_FORM.restecg)),
+        oldpeak: String(Number(payload?.oldpeak ?? DEFAULT_FORM.oldpeak)),
+        exang: String(Number(payload?.exang ?? DEFAULT_FORM.exang)),
+        risk: String(Math.max(5, Math.min(95, normalizedRisk))),
+        seconds: String(durationSec),
+        sample_rate: String(samplingRate),
+        lead,
+        noise_level: String(noiseLevel),
+        arrhythmia: arrhythmiaMode,
+        points: '920',
+      })
+      if (reason === 'live') qs.set('tick', String(Date.now()))
+      const { response, data } = await fetchJsonSafe(`${apiBase}/api/ecg-realtime?${qs.toString()}`)
+      if (!response.ok) throw new Error(data?.error || `ECG generation failed (${response.status})`)
+      const signal = normalizeEcgSignal(data?.signal)
+      if (signal.length > 0) {
+        setAssistantEcgSignal(signal)
+        setAssistantEcgMeta({
+          hr: Number.isFinite(Number(data?.hr)) ? Number(data.hr) : null,
+          sampleRate: Number.isFinite(Number(data?.sample_rate)) ? Number(data.sample_rate) : null,
+          durationSec: Number.isFinite(Number(data?.duration_sec)) ? Number(data.duration_sec) : null,
+        })
+      }
+      else throw new Error('ECG generation returned empty signal.')
+    } catch (e) {
+      if (reason === 'manual' || reason === 'image-analysis') setError(e.message)
+    } finally {
+      setAssistantEcgLoading(false)
+      if (reason === 'auto') setAssistantEcgBootstrapped(true)
+    }
+  }
+
   async function runPrediction() {
     if (viewerRole === 'doctor' && !doctorPatientData?.patient?.user_id) {
       setError('Search and open patient ID first, then run diagnosis.')
@@ -1205,6 +1596,10 @@ function App() {
     }
     if (viewerRole === 'patient' && !activeProfileId) {
       setError('Create/select a user profile before running diagnosis.')
+      return
+    }
+    if (ecgImageFile && !isSupportedDiagnosticImage(ecgImageFile)) {
+      setError('ECG analyzer supports only PNG/JPG/JPEG files.')
       return
     }
     setLoadingPredict(true)
@@ -1228,16 +1623,19 @@ function App() {
         setResult(null)
       } else {
         setResult(data)
+        setDiagnosisStage('diagnosis')
+        setAssistantEcgSignal([])
+        setAssistantEcgMeta({ hr: null, sampleRate: null, durationSec: null })
+        setAssistantEcgBootstrapped(false)
         if (ecgImageFile) {
           setEcgImageAnalyzing(true)
           try {
-            const formData = new FormData()
-            formData.append('ecg_image', ecgImageFile)
-            const responseEcg = await fetch(`${apiBase}/api/ecg-image-summary`, {
-              method: 'POST',
-              body: formData,
-            })
-            const dataEcg = await responseEcg.json()
+            const { response: responseEcg, data: dataEcg } = await postImageSummaryWithFieldFallback(
+              `${apiBase}/api/ecg-image-summary`,
+              ecgImageFile,
+              ['ecg_image', 'file'],
+              setApiBase,
+            )
             if (responseEcg.ok) setEcgImageSummary(dataEcg)
           } catch {
             // Ignore ECG interpretation failure; diagnosis result is still valid.
@@ -1313,7 +1711,7 @@ function App() {
   }
 
   async function analyzeEcgImage(fileOverride = null) {
-    const selectedFile = fileOverride || ecgImageFile
+    const selectedFile = resolveImageUploadFile(fileOverride, ecgImageFile)
     if (!selectedFile) {
       setError('Please choose an ECG image first.')
       return
@@ -1321,15 +1719,16 @@ function App() {
     setEcgImageAnalyzing(true)
     setError('')
     try {
-      const formData = new FormData()
-      formData.append('ecg_image', selectedFile)
-      const response = await fetch(`${apiBase}/api/ecg-image-summary`, {
-        method: 'POST',
-        body: formData,
-      })
-      const data = await response.json()
+      const { response, data } = await postImageSummaryWithFieldFallback(
+        `${apiBase}/api/ecg-image-summary`,
+        selectedFile,
+        ['ecg_image', 'file'],
+        setApiBase,
+      )
       if (!response.ok) throw new Error(data?.error || `ECG image analysis failed (${response.status})`)
       setEcgImageSummary(data)
+      setAssistantEcgBootstrapped(false)
+      await generateAssistantEcgSignal('image-analysis')
     } catch (e) {
       setError(e.message)
       setEcgImageSummary(null)
@@ -1339,7 +1738,7 @@ function App() {
   }
 
   async function analyzeMriImage(fileOverride = null) {
-    const selectedFile = fileOverride || mriImageFile
+    const selectedFile = resolveImageUploadFile(fileOverride, mriImageFile)
     if (!selectedFile) {
       setError('Please choose an MRI image first.')
       return
@@ -1347,13 +1746,12 @@ function App() {
     setMriImageAnalyzing(true)
     setError('')
     try {
-      const formData = new FormData()
-      formData.append('mri_image', selectedFile)
-      const response = await fetch(`${apiBase}/api/mri-image-summary`, {
-        method: 'POST',
-        body: formData,
-      })
-      const data = await response.json()
+      const { response, data } = await postImageSummaryWithFieldFallback(
+        `${apiBase}/api/mri-image-summary`,
+        selectedFile,
+        ['mri_image', 'file'],
+        setApiBase,
+      )
       if (!response.ok) throw new Error(data?.error || `MRI image analysis failed (${response.status})`)
       setMriImageSummary(data)
     } catch (e) {
@@ -1365,7 +1763,7 @@ function App() {
   }
 
   async function analyzeCathlabImage(fileOverride = null) {
-    const selectedFile = fileOverride || cathImageFile
+    const selectedFile = resolveImageUploadFile(fileOverride, cathImageFile)
     if (!selectedFile) {
       setError('Please choose a Cath Lab image first.')
       return
@@ -1373,13 +1771,12 @@ function App() {
     setCathImageAnalyzing(true)
     setError('')
     try {
-      const formData = new FormData()
-      formData.append('cathlab_image', selectedFile)
-      const response = await fetch(`${apiBase}/api/cathlab-image-summary`, {
-        method: 'POST',
-        body: formData,
-      })
-      const data = await response.json()
+      const { response, data } = await postImageSummaryWithFieldFallback(
+        `${apiBase}/api/cathlab-image-summary`,
+        selectedFile,
+        ['cathlab_image', 'file'],
+        setApiBase,
+      )
       if (!response.ok) throw new Error(data?.error || `Cath Lab image analysis failed (${response.status})`)
       setCathImageSummary(data)
     } catch (e) {
@@ -1441,19 +1838,21 @@ function App() {
   }
 
   function downloadCurrentReport() {
-    if (!result) {
-      setError('Run diagnosis first, then download report.')
+    const hasImageAnalysis = Boolean(ecgImageSummary || mriImageSummary || cathImageSummary)
+    if (!result && !hasImageAnalysis) {
+      setError('Run diagnosis or analyze at least one image, then download report.')
       return
     }
     const createdAt = new Date().toISOString()
     const profileName = activeProfile?.full_name || 'Unknown User'
-    const diseaseRows = (result.diseases || [])
+    const reportId = result?.report_id || `IMG-${createdAt.replace(/[-:.TZ]/g, '').slice(0, 14)}`
+    const diseaseRows = (result?.diseases || [])
       .map((d) => `<li><b>${escHtml(d.name)}</b> - ${Number(d.probability).toFixed(1)}% (ICD: ${escHtml(d.icd)})</li>`)
       .join('') || '<li>No high-probability disease cards.</li>'
-    const recRows = (result.recommendations || [])
+    const recRows = (result?.recommendations || [])
       .map((r) => `<li>[${escHtml(r.priority)}] ${escHtml(r.text)}</li>`)
       .join('') || '<li>No recommendations returned.</li>'
-    const reasoningRows = (result.reasoning_chain || [])
+    const reasoningRows = (result?.reasoning_chain || [])
       .map((s) => `<li><b>${escHtml(s.category)}:</b> ${escHtml(s.finding)} (${escHtml(s.weight)})</li>`)
       .join('') || '<li>No reasoning chain available.</li>'
     const imageSummaryRows = ecgImageSummary
@@ -1480,7 +1879,7 @@ function App() {
     <ul>${(cathImageSummary.quality_flags || []).map((q) => `<li>${escHtml(q)}</li>`).join('') || '<li>No quality flags.</li>'}</ul>
   </div>`
       : ''
-    const ecg = Array.isArray(result.ecg_signal) ? result.ecg_signal : []
+    const ecg = Array.isArray(result?.ecg_signal) ? result.ecg_signal : []
     let ecgPoints = ''
     if (ecg.length > 1) {
       const width = 860
@@ -1514,9 +1913,11 @@ function App() {
 </head>
 <body>
   <span class="badge">Generated by AGI CardioSense AI</span>
-  <h1>Cardiovascular Diagnosis Report</h1>
-  <p class="meta">User: <b>${escHtml(profileName)}</b> | Report ID: <b>${escHtml(result.report_id)}</b> | Created: ${escHtml(createdAt)}</p>
-
+  <h1>${result ? 'Cardiovascular Diagnosis Report' : 'Cardiac Image Analysis Report'}</h1>
+  <p class="meta">User: <b>${escHtml(profileName)}</b> | Report ID: <b>${escHtml(reportId)}</b> | Created: ${escHtml(createdAt)}</p>
+  ${
+    result
+      ? `
   <div class="card">
     <h2>Risk Summary</h2>
     <p><b>Overall Risk:</b> ${Number(result.master_probability || 0).toFixed(1)}%</p>
@@ -1542,7 +1943,13 @@ function App() {
   <div class="card">
     <h2>ECG Signal</h2>
     ${ecgPoints ? `<svg viewBox="0 0 860 150" width="100%" height="170" style="border:1px solid #dbe3ef;border-radius:8px;background:#fcfdff;"><polyline points="${ecgPoints}" fill="none" stroke="#d3394a" stroke-width="2"/></svg>` : '<p>No ECG signal available.</p>'}
-  </div>
+  </div>`
+      : `
+  <div class="card">
+    <h2>Summary</h2>
+    <p>This report was generated from uploaded image analysis only. Run full diagnosis to include risk score and disease probabilities.</p>
+  </div>`
+  }
   ${imageSummaryRows}
   ${mriSummaryRows}
   ${cathSummaryRows}
@@ -1553,11 +1960,12 @@ function App() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `AGI_CardioSense_Report_${(result.report_id || 'REPORT').replace(/[^a-zA-Z0-9_-]/g, '_')}.html`
+    a.download = `AGI_CardioSense_Report_${(reportId || 'REPORT').replace(/[^a-zA-Z0-9_-]/g, '_')}.html`
     document.body.appendChild(a)
     a.click()
     a.remove()
     URL.revokeObjectURL(url)
+    showSuccess('Report exported successfully.')
   }
 
   if (!authUser) {
@@ -1589,11 +1997,26 @@ function App() {
         authUser={authUser}
         logoutAuth={logoutAuth}
         portalPage={portalPage}
-        setPortalPage={setPortalPage}
+        diagnosisStage={diagnosisStage}
+        setPortalPage={navigateTopPage}
         health={health}
       />
 
       {error && <div className="alert">{error}</div>}
+      {successMessage && <div className="alert success">{successMessage}</div>}
+      <section className="workflow-stepper" aria-label="Clinical workflow">
+        {stepItems.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            className={`step-chip step-chip-button ${s.done ? 'done' : ''} ${s.active ? 'active' : ''}`}
+            onClick={() => navigateWorkflowStep(s)}
+          >
+            <span>{s.id}</span>
+            <strong>{s.label}</strong>
+          </button>
+        ))}
+      </section>
 
       {viewerRole === 'patient' && patientView === 'create-profile' ? (
         <CreateProfilePage
@@ -1612,14 +2035,14 @@ function App() {
           <p>
             {viewerRole === 'doctor'
               ? 'Manage profiles, run diagnosis, review and maintain longitudinal records.'
-              : 'Create/select your profile and view your diagnosis history clearly.'}
+              : 'Create/select your profile and manage appointments and records.'}
           </p>
 
           {viewerRole === 'patient' && (
             <>
               <section className="workspace-block">
                 <h3>Patient Workspace</h3>
-                <p className="muted">Create/select your profile and view your diagnosis history clearly.</p>
+                <p className="muted">Create/select your profile and manage appointments and records.</p>
                 <label><span>Select Profile</span>
                   <select value={activeProfileId} onChange={(e) => switchProfile(e.target.value)}>
                     <option value="">No active profile</option>
@@ -1654,16 +2077,19 @@ function App() {
                     {patientBookingLoading ? 'Booking...' : 'Book Appointment'}
                   </button>
                 </div>
-                <div className="history-scroll">
-                  {patientAppointments.length === 0 && <p className="muted">No appointments booked yet.</p>}
-                  {patientAppointments.slice(0, 20).map((a) => (
-                    <div key={`pa-${a.id}`} className="history-item">
-                      <button className="history-view-btn">
-                        <strong>{a.doctor_name || a.doctor_user_id}</strong>
-                        <small>{formatDateTime(a.scheduled_at)} · {a.status}</small>
-                      </button>
-                    </div>
-                  ))}
+                <div className="appointment-history-wrap">
+                  <h4 className="appointment-top-heading">Previous Appointments</h4>
+                  <div className="history-scroll appointment-history-scroll">
+                    {patientAppointments.length === 0 && <p className="muted">No appointments booked yet.</p>}
+                    {patientAppointments.slice(0, 20).map((a) => (
+                      <div key={`pa-${a.id}`} className="history-item">
+                        <button className="history-view-btn">
+                          <strong>{a.doctor_name || a.doctor_user_id}</strong>
+                          <small>{formatDateTime(a.scheduled_at)} · {a.status}</small>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </section>
 
@@ -1808,27 +2234,11 @@ function App() {
             </>
           )}
 
-          {viewerRole === 'patient' && (
-            <section className="workspace-block profile-history-block">
-              <h3>Profile Diagnosis History</h3>
-              <div className="history-scroll">
-                {history.length === 0 && <p className="muted">No saved diagnoses for selected profile.</p>}
-                {history.map((h) => (
-                  <div key={h.id} className="history-item">
-                    <button className="history-view-btn" onClick={() => setResult(h.result_payload)}>
-                      <strong>{h.report_id}</strong>
-                      <small>{h.risk_level} · {formatPct(h.master_probability)} · {formatDateTime(h.created_at)}</small>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
         </aside>
       </section>
       )}
 
-      {portalPage === 'diagnosis' && (
+      {portalPage === 'diagnosis' && diagnosisStage === 'inputs' && (
       <section className="layout single-column">
         <section className="panel form-panel">
           <h2>{viewerRole === 'doctor' ? 'Clinical Input' : 'Patient Input'}</h2>
@@ -1874,7 +2284,22 @@ function App() {
             <div className="field-section">
               <h3>ECG Upload / Selection</h3>
               <div className="actions">
-                <input type="file" accept="image/*" onChange={(e) => setEcgImageFile(e.target.files?.[0] || null)} />
+                <input
+                  type="file"
+                  accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null
+                    if (file && !isSupportedDiagnosticImage(file)) {
+                      setError('ECG upload supports only PNG/JPG/JPEG.')
+                      setEcgImageFile(null)
+                      e.target.value = ''
+                      return
+                    }
+                    setError('')
+                    setEcgImageFile(file)
+                    if (file) generateAssistantEcgSignal('manual')
+                  }}
+                />
                 {ecgImageFile && <span className="active-user">Selected: <b>{ecgImageFile.name}</b></span>}
               </div>
             </div>
@@ -1887,7 +2312,7 @@ function App() {
             <button className="btn" onClick={() => { setForm({ ...DEFAULT_FORM, ...OPTIONAL_FORM }); setDefaultsAppliedFields([]) }}>
               Apply Defaults
             </button>
-            <button className="btn" onClick={() => { setForm(EMPTY_FORM); setResult(null); setError('') }}>Reset</button>
+            <button className="btn" onClick={() => { setForm(EMPTY_FORM); setResult(null); setDiagnosisStage('inputs'); setError('') }}>Reset</button>
           </div>
 
           {viewerRole === 'patient' && (
@@ -1912,11 +2337,33 @@ function App() {
       </section>
       )}
 
-      {(portalPage === 'diagnosis' || portalPage === 'assistant') && (
-      <section className={`layout ${portalPage === 'diagnosis' ? 'single-column' : ''} results-zone`}>
+      {((portalPage === 'diagnosis' && diagnosisStage === 'diagnosis') || portalPage === 'assistant') && (
+      <section className={`layout ${(portalPage === 'diagnosis' || portalPage === 'assistant') ? 'single-column' : ''} results-zone`}>
         {portalPage === 'diagnosis' && (
-        <section className="panel">
+        <section className="panel diagnosis-panel">
           <h2>Diagnosis Summary</h2>
+          {viewerRole === 'patient' && (
+            <>
+              <h3>Profile Diagnosis History</h3>
+              <div className="history-scroll diagnosis-history-scroll">
+                {history.length === 0 && <p className="muted">No saved diagnoses for selected profile.</p>}
+                {history.map((h) => (
+                  <div key={h.id} className="history-item">
+                    <button
+                      className="history-view-btn"
+                      onClick={() => {
+                        setSelectedDoctorSummaryId('')
+                        setResult(h.result_payload)
+                      }}
+                    >
+                      <strong>{h.report_id}</strong>
+                      <small>{h.risk_level} · {formatPct(h.master_probability)} · {formatDateTime(h.created_at)}</small>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
           {viewerRole === 'patient' && selectedDoctorSummary && (
             <div className="doctor-summary-card">
               <h3>Selected Doctor Summary</h3>
@@ -1957,13 +2404,28 @@ function App() {
               })()}
             </div>
           )}
-          {!result && !selectedDoctorSummary && <p>No report yet. Complete the flow and run diagnosis.</p>}
+          {!result && !selectedDoctorSummary && (
+            <>
+              <p>No report yet. Complete the flow and run diagnosis.</p>
+              <div className="actions">
+                <button className="btn" onClick={() => setDiagnosisStage('inputs')}>Back To Inputs</button>
+              </div>
+            </>
+          )}
           {result && (
             <>
               <div className={`risk-banner ${riskTone}`}>
                 <div><span>Overall Risk</span><h3>{formatPct(result.master_probability)}</h3></div>
                 <div><span>Tier</span><h3>{result.risk_tier.level}</h3></div>
                 <div><span>Report ID</span><h3>{result.report_id}</h3></div>
+              </div>
+              <div className="clinical-metrics">
+                {metricCards.map((m) => (
+                  <article key={m.label} className={`metric-card ${m.tone}`}>
+                    <span>{m.label}</span>
+                    <strong>{m.value}</strong>
+                  </article>
+                ))}
               </div>
               {(result.raw_model_probability != null || result.clinical_severity_score != null) && (
                 <p className="muted">
@@ -2024,25 +2486,45 @@ function App() {
                   <ul className="list">{(result.recommendations || []).map((rec, idx) => <li key={`${rec.priority}-${idx}`}>[{rec.priority}] {rec.text}</li>)}</ul>
                 </>
               ) : (
-                <>
-                  <h3>Easy Summary</h3>
-                  <p className="muted">{getPatientRiskCaption(result?.risk_tier?.level)}</p>
+                <div className="diag-sections">
+                  <section className="diag-section">
+                    <h3 className="diag-side-heading">Easy Summary</h3>
+                    <div className="diag-side-content">
+                      <p className="muted">{getPatientRiskCaption(result?.risk_tier?.level)}</p>
+                    </div>
+                  </section>
 
-                  <h3>Main Concerns</h3>
-                  <ul className="list">
-                    {(result.diseases || []).slice(0, 3).map((d) => <li key={`patient-${d.id}`}>{d.name} ({formatPct(d.probability)})</li>)}
-                    {(result.diseases || []).length === 0 && <li>No major disease signal detected by this model run.</li>}
-                  </ul>
+                  <section className="diag-section">
+                    <h3 className="diag-side-heading">Main Concerns</h3>
+                    <div className="diag-side-content">
+                      <ul className="list">
+                        {(result.diseases || []).slice(0, 3).map((d) => <li key={`patient-${d.id}`}>{d.name} ({formatPct(d.probability)})</li>)}
+                        {(result.diseases || []).length === 0 && <li>No major disease signal detected by this model run.</li>}
+                      </ul>
+                    </div>
+                  </section>
 
-                  <h3>Lifestyle Intervention Planner</h3>
-                  <ul className="list">{getLifestylePlan(result).map((line, idx) => <li key={`life-${idx}`}>{line}</li>)}</ul>
+                  <section className="diag-section">
+                    <h3 className="diag-side-heading">Lifestyle Plan</h3>
+                    <div className="diag-side-content">
+                      <ul className="list">{getLifestylePlan(result).map((line, idx) => <li key={`life-${idx}`}>{line}</li>)}</ul>
+                    </div>
+                  </section>
 
-                  <h3>Next Best Test</h3>
-                  <ul className="list">{getNextBestTests(result).map((line, idx) => <li key={`test-${idx}`}>{line}</li>)}</ul>
+                  <section className="diag-section">
+                    <h3 className="diag-side-heading">Next Best Tests</h3>
+                    <div className="diag-side-content">
+                      <ul className="list">{getNextBestTests(result).map((line, idx) => <li key={`test-${idx}`}>{line}</li>)}</ul>
+                    </div>
+                  </section>
 
-                  <h3>Emergency Action Guidance</h3>
-                  <ul className="list">{getEmergencyGuidance(result).map((line, idx) => <li key={`emer-${idx}`}>{line}</li>)}</ul>
-                </>
+                  <section className="diag-section">
+                    <h3 className="diag-side-heading">Emergency Guidance</h3>
+                    <div className="diag-side-content">
+                      <ul className="list">{getEmergencyGuidance(result).map((line, idx) => <li key={`emer-${idx}`}>{line}</li>)}</ul>
+                    </div>
+                  </section>
+                </div>
               )}
 
               {(result.input_requirements || []).length > 0 && (
@@ -2118,9 +2600,116 @@ function App() {
         {portalPage === 'assistant' && (
         <section className="panel">
           <h2>{viewerRole === 'doctor' ? 'Monitoring & Medical Assistant' : 'My Monitoring & Care Assistant'}</h2>
+          <h3>ECG Prompt Builder</h3>
+          <div className="profile-create-grid">
+            <label><span>Duration (sec)</span>
+              <input
+                type="number"
+                min="3"
+                max="30"
+                step="1"
+                value={assistantEcgPrompt.durationSec}
+                onChange={(e) => setAssistantEcgPrompt((prev) => ({ ...prev, durationSec: e.target.value }))}
+              />
+            </label>
+            <label><span>Sampling Rate (Hz)</span>
+              <input
+                type="number"
+                min="120"
+                max="1000"
+                step="10"
+                value={assistantEcgPrompt.samplingRate}
+                onChange={(e) => setAssistantEcgPrompt((prev) => ({ ...prev, samplingRate: e.target.value }))}
+              />
+            </label>
+            <label><span>Lead Type</span>
+              <select value={assistantEcgPrompt.lead} onChange={(e) => setAssistantEcgPrompt((prev) => ({ ...prev, lead: e.target.value }))}>
+                <option value="I">Lead I</option>
+                <option value="II">Lead II</option>
+                <option value="III">Lead III</option>
+                <option value="V1">Lead V1</option>
+                <option value="V2">Lead V2</option>
+                <option value="V3">Lead V3</option>
+                <option value="V4">Lead V4</option>
+                <option value="V5">Lead V5</option>
+                <option value="V6">Lead V6</option>
+              </select>
+            </label>
+            <label><span>Noise Level (0-0.20)</span>
+              <input
+                type="number"
+                min="0"
+                max="0.2"
+                step="0.005"
+                value={assistantEcgPrompt.noiseLevel}
+                onChange={(e) => setAssistantEcgPrompt((prev) => ({ ...prev, noiseLevel: e.target.value }))}
+              />
+            </label>
+            <label><span>Arrhythmia</span>
+              <select value={assistantEcgPrompt.arrhythmiaMode} onChange={(e) => setAssistantEcgPrompt((prev) => ({ ...prev, arrhythmiaMode: e.target.value }))}>
+                <option value="auto">Auto</option>
+                <option value="none">None</option>
+                <option value="mild">Mild</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+            <label><span>Output Format</span>
+              <select value={assistantEcgPrompt.outputFormat} onChange={(e) => setAssistantEcgPrompt((prev) => ({ ...prev, outputFormat: e.target.value }))}>
+                <option value="waveform">Waveform Image</option>
+                <option value="timeseries">Time-Series Data (CSV)</option>
+                <option value="animation">Animation (coming soon)</option>
+              </select>
+            </label>
+          </div>
+          <div className="actions">
+            {Object.entries(ECG_PRESETS).map(([key, preset]) => (
+              <button key={key} className="btn" onClick={() => applyEcgPreset(key)}>{preset.label}</button>
+            ))}
+          </div>
           <h3>ECG Signal</h3>
-          <div className="ecg-box">
-            <svg viewBox="0 0 920 140" preserveAspectRatio="none"><polyline points={ecgPoints(result?.ecg_signal || [])} /></svg>
+          <div className="ecg-meta-row">
+            <span className="ecg-meta-chip">{assistantDisplayHr != null ? `BPM ${assistantDisplayHr}` : 'BPM --'}</span>
+            <span className="ecg-meta-chip">
+              {Number.isFinite(Number(assistantEcgMeta.sampleRate))
+                ? `Sample ${Number(assistantEcgMeta.sampleRate).toFixed(0)} Hz`
+                : 'Sample --'}
+            </span>
+            <span className="ecg-meta-chip">
+              {Number.isFinite(Number(assistantEcgMeta.durationSec))
+                ? `Duration ${Number(assistantEcgMeta.durationSec).toFixed(1)}s`
+                : 'Duration --'}
+            </span>
+            <span className={`ecg-meta-chip ${assistantEcgLive ? 'live' : ''}`}>{assistantEcgLive ? 'Live ON' : 'Live OFF'}</span>
+          </div>
+          <div className="ecg-box ecg-box--assistant">
+            {assistantVisibleEcg.length > 1 ? (
+              <svg viewBox="0 0 920 140" preserveAspectRatio="none"><polyline points={ecgPoints(assistantVisibleEcg)} /></svg>
+            ) : (
+              <div className="ecg-placeholder">{assistantEcgLoading ? 'Generating ECG signal...' : 'Analyze ECG photo or click Generate ECG Signal.'}</div>
+            )}
+          </div>
+          <div className="actions">
+            <button className="btn" onClick={() => generateAssistantEcgSignal('manual')} disabled={assistantEcgLoading}>
+              {assistantEcgLoading ? 'Generating...' : 'Generate ECG Signal'}
+            </button>
+            <button
+              className={`btn ${assistantEcgLive ? 'primary' : ''}`}
+              onClick={() => {
+                const next = !assistantEcgLive
+                setAssistantEcgLive(next)
+                if (next) generateAssistantEcgSignal('live')
+              }}
+            >
+              {assistantEcgLive ? 'Stop Live ECG' : 'Start Live ECG'}
+            </button>
+            <button className="btn" onClick={() => setAssistantEcgExpanded(true)} disabled={assistantVisibleEcg.length < 2}>
+              Expand ECG
+            </button>
+            {assistantEcgPrompt.outputFormat === 'timeseries' && (
+              <button className="btn" onClick={exportAssistantEcgCsv} disabled={assistantVisibleEcg.length < 2}>
+                Download ECG CSV
+              </button>
+            )}
           </div>
 
           {viewerRole === 'doctor' && (
@@ -2215,10 +2804,21 @@ function App() {
             <div className="actions">
               <input
                 type="file"
-                accept="image/*"
-                onChange={(e) => setEcgImageFile(e.target.files?.[0] || null)}
+                accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+                onChange={(e) => {
+                  const file = e.target.files?.[0] || null
+                  if (file && !isSupportedDiagnosticImage(file)) {
+                    setError('ECG analyzer supports only PNG/JPG/JPEG.')
+                    setEcgImageFile(null)
+                    e.target.value = ''
+                    return
+                  }
+                  setError('')
+                  setEcgImageFile(file)
+                  if (file) generateAssistantEcgSignal('manual')
+                }}
               />
-              <button className="btn primary" onClick={analyzeEcgImage} disabled={ecgImageAnalyzing}>
+              <button className="btn primary" onClick={() => analyzeEcgImage()} disabled={ecgImageAnalyzing}>
                 {ecgImageAnalyzing ? 'Analyzing...' : (viewerRole === 'doctor' ? 'Analyze ECG Image' : 'Analyze ECG Photo')}
               </button>
             </div>
@@ -2253,10 +2853,20 @@ function App() {
             <div className="actions">
               <input
                 type="file"
-                accept="image/*"
-                onChange={(e) => setMriImageFile(e.target.files?.[0] || null)}
+                accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+                onChange={(e) => {
+                  const file = e.target.files?.[0] || null
+                  if (file && !isSupportedDiagnosticImage(file)) {
+                    setError('MRI analyzer supports only PNG/JPG/JPEG.')
+                    setMriImageFile(null)
+                    e.target.value = ''
+                    return
+                  }
+                  setError('')
+                  setMriImageFile(file)
+                }}
               />
-              <button className="btn primary" onClick={analyzeMriImage} disabled={mriImageAnalyzing}>
+              <button className="btn primary" onClick={() => analyzeMriImage()} disabled={mriImageAnalyzing}>
                 {mriImageAnalyzing ? 'Analyzing...' : (viewerRole === 'doctor' ? 'Analyze MRI Image' : 'Analyze MRI Photo')}
               </button>
             </div>
@@ -2291,10 +2901,20 @@ function App() {
             <div className="actions">
               <input
                 type="file"
-                accept="image/*"
-                onChange={(e) => setCathImageFile(e.target.files?.[0] || null)}
+                accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+                onChange={(e) => {
+                  const file = e.target.files?.[0] || null
+                  if (file && !isSupportedDiagnosticImage(file)) {
+                    setError('Cath Lab analyzer supports only PNG/JPG/JPEG.')
+                    setCathImageFile(null)
+                    e.target.value = ''
+                    return
+                  }
+                  setError('')
+                  setCathImageFile(file)
+                }}
               />
-              <button className="btn primary" onClick={analyzeCathlabImage} disabled={cathImageAnalyzing}>
+              <button className="btn primary" onClick={() => analyzeCathlabImage()} disabled={cathImageAnalyzing}>
                 {cathImageAnalyzing ? 'Analyzing...' : (viewerRole === 'doctor' ? 'Analyze Cath Lab Image' : 'Analyze Cath Lab Photo')}
               </button>
             </div>
@@ -2340,6 +2960,19 @@ function App() {
       </section>
       )}
       </>
+      )}
+      {assistantEcgExpanded && (
+        <div className="ecg-modal-overlay" role="dialog" aria-modal="true" onClick={() => setAssistantEcgExpanded(false)}>
+          <div className="ecg-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="ecg-modal-head">
+              <h3>Expanded ECG Signal</h3>
+              <button className="btn" onClick={() => setAssistantEcgExpanded(false)}>Close</button>
+            </div>
+            <div className="ecg-box ecg-box--expanded">
+              <svg viewBox="0 0 920 140" preserveAspectRatio="none"><polyline points={ecgPoints(assistantVisibleEcg)} /></svg>
+            </div>
+          </div>
+        </div>
       )}
     </main>
   )

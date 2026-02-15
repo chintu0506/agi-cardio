@@ -511,47 +511,65 @@ def build_calibrated_model(base_model, method):
 
 
 def train_disease_model(X_tr, X_te, y_tr, y_te, name):
+    # Hold out a validation slice from training data so model/calibration/threshold
+    # selection never uses the final test split.
+    X_fit, X_val, y_fit, y_val = train_test_split(
+        X_tr, y_tr, test_size=0.2, random_state=42, stratify=y_tr
+    )
+
     cv = StratifiedKFold(n_splits=4, shuffle=True, random_state=42)
     candidates = build_candidates()
     scored = []
     for label, model in candidates:
-        cv_auc = cross_val_score(model, X_tr, y_tr, cv=cv, scoring='roc_auc', n_jobs=1).mean()
+        cv_auc = cross_val_score(model, X_fit, y_fit, cv=cv, scoring='roc_auc', n_jobs=1).mean()
         scored.append((label, model, cv_auc))
-    xgb_best_model, xgb_cv_auc = train_tuned_xgboost(X_tr, y_tr)
+    xgb_best_model, xgb_cv_auc = train_tuned_xgboost(X_fit, y_fit)
     if xgb_best_model is not None:
         scored.append(('xgboost_tuned', xgb_best_model, xgb_cv_auc))
     scored.sort(key=lambda x: x[2], reverse=True)
     best_label, best_model, best_cv_auc = scored[0]
 
-    candidate_models = []
-    base_fitted = clone(best_model)
-    base_fitted.fit(X_tr, y_tr)
-    candidate_models.append((base_fitted, 'none'))
-    for method in ['sigmoid', 'isotonic']:
-        cal_model = build_calibrated_model(best_model, method)
-        cal_model.fit(X_tr, y_tr)
-        candidate_models.append((cal_model, method))
-
+    # Select calibration strategy + threshold on validation split only.
     evaluated = []
-    for mdl, method in candidate_models:
-        train_prob = mdl.predict_proba(X_tr)[:, 1]
-        te_prob = mdl.predict_proba(X_te)[:, 1]
-        threshold, train_acc = select_threshold(y_tr, train_prob)
-        pred = (te_prob >= threshold).astype(int)
-        acc = accuracy_score(y_te, pred)
-        auc = roc_auc_score(y_te, te_prob) if len(np.unique(y_te)) > 1 else 0.5
-        brier = brier_score_loss(y_te, te_prob)
-        ll = log_loss(y_te, np.clip(te_prob, 1e-6, 1 - 1e-6))
-        evaluated.append((mdl, method, threshold, train_acc, acc, auc, brier, ll))
+    for method in ['none', 'sigmoid', 'isotonic']:
+        if method == 'none':
+            mdl = clone(best_model)
+            mdl.fit(X_fit, y_fit)
+        else:
+            mdl = build_calibrated_model(best_model, method)
+            mdl.fit(X_fit, y_fit)
 
-    evaluated.sort(key=lambda x: (x[4], x[5], -x[6]), reverse=True)
-    final_model, calibration_method, best_threshold, train_acc, acc, auc, brier, ll = evaluated[0]
+        val_prob = mdl.predict_proba(X_val)[:, 1]
+        threshold, val_acc = select_threshold(y_val, val_prob)
+        val_pred = (val_prob >= threshold).astype(int)
+        val_auc = roc_auc_score(y_val, val_prob) if len(np.unique(y_val)) > 1 else 0.5
+        val_brier = brier_score_loss(y_val, val_prob)
+        val_ll = log_loss(y_val, np.clip(val_prob, 1e-6, 1 - 1e-6))
+        evaluated.append((method, threshold, val_acc, val_auc, val_brier, val_ll))
+
+    evaluated.sort(key=lambda x: (x[2], x[3], -x[4]), reverse=True)
+    calibration_method, best_threshold, val_acc, val_auc, val_brier, val_ll = evaluated[0]
+
+    # Refit selected strategy on full training split; evaluate once on untouched test split.
+    if calibration_method == 'none':
+        final_model = clone(best_model)
+        final_model.fit(X_tr, y_tr)
+    else:
+        final_model = build_calibrated_model(best_model, calibration_method)
+        final_model.fit(X_tr, y_tr)
+
     final_prob = final_model.predict_proba(X_te)[:, 1]
     final_pred = (final_prob >= best_threshold).astype(int)
+    train_prob = final_model.predict_proba(X_tr)[:, 1]
+    train_acc = accuracy_score(y_tr, (train_prob >= best_threshold).astype(int))
+    acc = accuracy_score(y_te, final_pred)
+    auc = roc_auc_score(y_te, final_prob) if len(np.unique(y_te)) > 1 else 0.5
+    brier = brier_score_loss(y_te, final_prob)
+    ll = log_loss(y_te, np.clip(final_prob, 1e-6, 1 - 1e-6))
     print(
         f"   {name:<30} model={best_label:<12} th={best_threshold:.2f} "
         f"cal={calibration_method:<8} brier={brier:.4f} "
-        f"train_acc={train_acc*100:.1f}% cv_auc={best_cv_auc:.3f} "
+        f"val_acc={val_acc*100:.1f}% cv_auc={best_cv_auc:.3f} "
         f"acc={acc*100:.1f}% auc={auc:.3f}"
     )
     return (
@@ -614,12 +632,8 @@ def train():
         master_y = df['target'].reset_index(drop=True)
     targets['master'] = master_y
 
-    scaler_fit_X = pd.concat([base_X, master_X], axis=0, ignore_index=True)
-    scaler = StandardScaler()
-    scaler.fit(scaler_fit_X)
-
     os.makedirs('models', exist_ok=True)
-    joblib.dump(scaler, 'models/scaler.pkl')
+    legacy_scaler = None
 
     print("\n🤖 Training models (LogReg / RF / XGBoost / Ensemble candidates)…")
     models_meta = {}
@@ -640,6 +654,8 @@ def train():
         X_te = X_all.iloc[te_idx].reset_index(drop=True)
         y_tr = y_all.iloc[tr_idx].reset_index(drop=True)
         y_te = y_all.iloc[te_idx].reset_index(drop=True)
+        scaler = StandardScaler()
+        scaler.fit(X_tr)
         X_tr_s = pd.DataFrame(scaler.transform(X_tr), columns=FEATURE_COLS)
         X_te_s = pd.DataFrame(scaler.transform(X_te), columns=FEATURE_COLS)
         (
@@ -647,6 +663,7 @@ def train():
             calibration_method, brier, ll, y_te_out, prob_out, pred_out
         ) = train_disease_model(X_tr_s, X_te_s, y_tr, y_te, key)
         joblib.dump(clf, f'models/{key}_model.pkl')
+        joblib.dump(scaler, f'models/{key}_scaler.pkl')
         models_meta[key] = {
             'accuracy': round(acc*100, 1),
             'auc': round(auc, 3),
@@ -666,10 +683,15 @@ def train():
         if shap_imp is not None:
             models_meta[key]['shap_feature_importance'] = shap_imp
         if key == 'master':
+            legacy_scaler = scaler
             master_train_Xs = X_tr_s
             master_train_y = y_tr
             master_test_prob = np.asarray(prob_out, dtype=float)
             master_test_true = np.asarray(y_te_out).astype(int)
+
+    # Backward-compatible single scaler artifact (master model scaler).
+    if legacy_scaler is not None:
+        joblib.dump(legacy_scaler, 'models/scaler.pkl')
 
     # Feature importances from master RF
     rf_sub = RandomForestClassifier(n_estimators=200, max_depth=9, random_state=42, n_jobs=-1)

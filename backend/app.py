@@ -228,7 +228,7 @@ def diagnose_page():
         <div class="upload-box">
           <label><b>Patient Input Images</b> (ECG, reports, scans)</label>
           <div class="row-wrap">
-            <input type="file" id="patient-images" accept="image/*" multiple />
+            <input type="file" id="patient-images" accept=".png,.jpg,.jpeg,image/png,image/jpeg" multiple />
             <button type="button" id="generate-report-btn">Download Patient Report</button>
             <span class="hint">Uploads are used inside generated report file.</span>
           </div>
@@ -805,16 +805,31 @@ MODEL_KEYS = ['master', 'cad', 'hf', 'arr', 'mi']
 MODELS = {}
 META = {}
 FEATURES = []
+MODEL_SCALERS = {}
 scaler = None
 RETRAIN_LOCK = threading.Lock()
 
 def load_artifacts():
-    global scaler, MODELS, META, FEATURES
-    scaler = joblib.load(f'{DIR}/scaler.pkl')
+    global scaler, MODELS, META, FEATURES, MODEL_SCALERS
     MODELS = {k: joblib.load(f'{DIR}/{k}_model.pkl') for k in MODEL_KEYS}
     with open(f'{DIR}/model_meta.json') as f:
         META = json.load(f)
     FEATURES = META['features']
+    MODEL_SCALERS = {}
+    legacy_scaler = None
+    legacy_scaler_path = f'{DIR}/scaler.pkl'
+    if os.path.exists(legacy_scaler_path):
+        legacy_scaler = joblib.load(legacy_scaler_path)
+    for key in MODEL_KEYS:
+        per_model_scaler_path = f'{DIR}/{key}_scaler.pkl'
+        if os.path.exists(per_model_scaler_path):
+            MODEL_SCALERS[key] = joblib.load(per_model_scaler_path)
+        elif legacy_scaler is not None:
+            MODEL_SCALERS[key] = legacy_scaler
+    scaler = legacy_scaler if legacy_scaler is not None else (next(iter(MODEL_SCALERS.values()), None))
+    missing_scalers = [k for k in MODEL_KEYS if k not in MODEL_SCALERS]
+    if missing_scalers:
+        raise RuntimeError(f"Missing scaler artifacts for: {', '.join(missing_scalers)}")
     log.info(f"✅ {len(MODELS)} models loaded | master acc {META['models']['master']['accuracy']}%")
 
 def retrain_and_reload():
@@ -834,9 +849,13 @@ def retrain_and_reload():
         load_artifacts()
         log.info("✅ Model retraining complete. Prediction retried with refreshed artifacts.")
 
-def run_model_probs(X_scaled):
+def run_model_probs(X_raw):
     probs = {}
     for key, mdl in MODELS.items():
+        scaler_for_model = MODEL_SCALERS.get(key)
+        if scaler_for_model is None:
+            raise RuntimeError(f"Scaler missing for model: {key}")
+        X_scaled = pd.DataFrame(scaler_for_model.transform(X_raw), columns=FEATURES)
         probs[key] = round(float(mdl.predict_proba(X_scaled)[0][1]) * 100, 1)
     return probs
 
@@ -1740,17 +1759,23 @@ def _stable_seed(patient_data, risk_pct):
         patient_data.get("oldpeak", 0),
         patient_data.get("exang", 0),
         round(_safe_float(risk_pct, 40.0), 2),
+        patient_data.get("_lead", "II"),
+        round(_safe_float(patient_data.get("_noise"), 0.02), 3),
+        patient_data.get("_arrhythmia", "auto"),
     ]
     raw = "|".join(str(x) for x in seed_fields).encode("utf-8")
     digest = hashlib.sha256(raw).hexdigest()[:16]
     return int(digest, 16) % (2**32 - 1)
 
 
-def simulate_ecg(patient_data, risk_pct, seconds=6.0, sample_rate=300, out_points=300):
+def simulate_ecg(patient_data, risk_pct, seconds=6.0, sample_rate=300, out_points=300, lead="II", noise_level=0.02, arrhythmia="auto"):
     """Generate a physiologically-shaped synthetic ECG waveform."""
     seconds = float(_clamp(_safe_float(seconds, 6.0), 2.0, 20.0))
     sample_rate = int(_clamp(int(_safe_float(sample_rate, 300)), 120, 500))
     out_points = int(_clamp(int(_safe_float(out_points, 300)), 120, 2400))
+    lead = str(lead or "II").strip().upper()
+    noise_level = _clamp(_safe_float(noise_level, 0.02), 0.0, 0.2)
+    arrhythmia = str(arrhythmia or "auto").strip().lower()
 
     hr = _safe_float(patient_data.get("thalach"), 75.0)
     hr = _clamp(hr, 40.0, 190.0)
@@ -1759,7 +1784,11 @@ def simulate_ecg(patient_data, risk_pct, seconds=6.0, sample_rate=300, out_point
     exang = int(_clamp(int(_safe_float(patient_data.get("exang"), 0)), 0, 1))
     risk_norm = _clamp(_safe_float(risk_pct, 40.0) / 100.0, 0.0, 1.0)
 
-    seed = _stable_seed(patient_data, risk_pct)
+    seed_data = dict(patient_data or {})
+    seed_data["_lead"] = lead
+    seed_data["_noise"] = noise_level
+    seed_data["_arrhythmia"] = arrhythmia
+    seed = _stable_seed(seed_data, risk_pct)
     rng = np.random.default_rng(seed)
 
     n = max(3, int(round(seconds * sample_rate)))
@@ -1772,6 +1801,12 @@ def simulate_ecg(patient_data, risk_pct, seconds=6.0, sample_rate=300, out_point
         0.05,
         0.9,
     )
+    if arrhythmia == "none":
+        arrhythmia_strength = _clamp(arrhythmia_strength * 0.2, 0.02, 0.12)
+    elif arrhythmia == "mild":
+        arrhythmia_strength = _clamp(arrhythmia_strength * 0.65, 0.08, 0.45)
+    elif arrhythmia in ("high", "severe"):
+        arrhythmia_strength = _clamp(max(arrhythmia_strength, 0.72), 0.55, 0.95)
     severe_arrhythmia = arrhythmia_strength >= 0.62
     beat_meta = []
     b = 0.0
@@ -1806,6 +1841,26 @@ def simulate_ecg(patient_data, risk_pct, seconds=6.0, sample_rate=300, out_point
         t_amp *= 0.88
     if restecg == 1:  # ischemic-like ST/T distortion.
         t_amp *= 0.8
+
+    lead_profile = {
+        "I": {"qrs": 0.95, "t": 0.95, "st": 0.0},
+        "II": {"qrs": 1.0, "t": 1.0, "st": 0.0},
+        "III": {"qrs": 0.9, "t": 0.85, "st": -0.008},
+        "V1": {"qrs": 0.86, "t": -0.55, "st": 0.01},
+        "V2": {"qrs": 0.96, "t": -0.2, "st": 0.008},
+        "V3": {"qrs": 1.04, "t": 0.28, "st": 0.004},
+        "V4": {"qrs": 1.1, "t": 0.8, "st": -0.004},
+        "V5": {"qrs": 1.14, "t": 1.0, "st": -0.008},
+        "V6": {"qrs": 1.06, "t": 0.92, "st": -0.005},
+    }.get(lead, {"qrs": 1.0, "t": 1.0, "st": 0.0})
+    qrs_factor = lead_profile["qrs"]
+    t_factor = lead_profile["t"]
+    lead_st_shift = lead_profile["st"]
+    p_amp *= max(0.7, min(1.2, (0.9 + 0.15 * qrs_factor)))
+    q_amp *= qrs_factor
+    r_amp *= qrs_factor
+    s_amp *= qrs_factor
+    t_amp *= t_factor
 
     for beat in beat_meta:
         beat_start = beat["start"]
@@ -1857,19 +1912,21 @@ def simulate_ecg(patient_data, risk_pct, seconds=6.0, sample_rate=300, out_point
                 st_shift = 0.01 + 0.02 * risk_norm
             else:
                 st_shift = -0.008 * risk_norm
+            st_shift += lead_st_shift
             mask = (t >= st_left) & (t <= st_right)
             signal[mask] += st_shift
 
+    noise_scale = max(0.05, noise_level / 0.02)
     baseline = (
-        0.025 * np.sin(2.0 * math.pi * 0.33 * t + rng.uniform(0, 2 * math.pi))
-        + 0.012 * np.sin(2.0 * math.pi * 0.08 * t + rng.uniform(0, 2 * math.pi))
+        (0.025 * noise_scale) * np.sin(2.0 * math.pi * 0.33 * t + rng.uniform(0, 2 * math.pi))
+        + (0.012 * noise_scale) * np.sin(2.0 * math.pi * 0.08 * t + rng.uniform(0, 2 * math.pi))
     )
     if severe_arrhythmia:
         # Fine fibrillatory-like baseline activity in high-risk arrhythmic traces.
-        baseline += 0.010 * np.sin(2.0 * math.pi * 6.5 * t + rng.uniform(0, 2 * math.pi))
-        baseline += 0.006 * np.sin(2.0 * math.pi * 8.1 * t + rng.uniform(0, 2 * math.pi))
-    muscle_noise = 0.005 * (1.0 + risk_norm) * np.sin(2.0 * math.pi * 24.0 * t + rng.uniform(0, 2 * math.pi))
-    white_noise = rng.normal(0.0, 0.004 + (0.010 * risk_norm) + (0.008 * arrhythmia_strength), n)
+        baseline += (0.010 * noise_scale) * np.sin(2.0 * math.pi * 6.5 * t + rng.uniform(0, 2 * math.pi))
+        baseline += (0.006 * noise_scale) * np.sin(2.0 * math.pi * 8.1 * t + rng.uniform(0, 2 * math.pi))
+    muscle_noise = (0.005 * noise_scale) * (1.0 + risk_norm) * np.sin(2.0 * math.pi * 24.0 * t + rng.uniform(0, 2 * math.pi))
+    white_noise = rng.normal(0.0, (0.004 + (0.010 * risk_norm) + (0.008 * arrhythmia_strength)) * noise_scale, n)
     signal = signal + baseline + muscle_noise + white_noise
 
     # Keep display range stable while preserving morphology.
@@ -2060,6 +2117,44 @@ def summarize_cardiac_image(file_storage, modality='mri'):
         'precautions': precautions
     }
 
+
+def _is_allowed_medical_image(file_storage):
+    allowed_mime = {'image/png', 'image/jpeg', 'image/jpg'}
+    allowed_ext = {'.png', '.jpg', '.jpeg'}
+    mimetype = str(getattr(file_storage, 'mimetype', '') or '').lower()
+    filename = str(getattr(file_storage, 'filename', '') or '').lower()
+    ext = os.path.splitext(filename)[1]
+    return (mimetype in allowed_mime) or (ext in allowed_ext)
+
+
+class _RawUpload:
+    def __init__(self, raw, filename='upload.jpg', mimetype='application/octet-stream'):
+        self._raw = raw or b''
+        self.filename = filename
+        self.mimetype = mimetype
+
+    def read(self):
+        return self._raw
+
+
+def _extract_uploaded_image(primary_field):
+    file_storage = request.files.get(primary_field) or request.files.get('file')
+    if file_storage:
+        return file_storage
+    if request.files:
+        return next(iter(request.files.values()), None)
+    raw = request.get_data(cache=True) or b''
+    content_type = str(request.headers.get('Content-Type', '') or '').lower()
+    if raw and content_type.startswith('image/'):
+        mime = content_type.split(';')[0].strip()
+        ext = '.jpg'
+        if 'png' in mime:
+            ext = '.png'
+        elif 'jpeg' in mime or 'jpg' in mime:
+            ext = '.jpg'
+        return _RawUpload(raw, filename=f'upload{ext}', mimetype=mime)
+    return None
+
 def _validate_diagnosis_payload(raw):
     if not isinstance(raw, dict):
         raise ValueError("Request payload must be a JSON object.")
@@ -2192,14 +2287,13 @@ def generate_diagnosis(data):
     data = _validate_diagnosis_payload(data)
 
     X = pd.DataFrame([[float(data[f]) for f in FEATURES]], columns=FEATURES)
-    Xs = pd.DataFrame(scaler.transform(X), columns=FEATURES)
 
     try:
-        probs = run_model_probs(Xs)
+        probs = run_model_probs(X)
     except AttributeError as e:
         if 'multi_class' in str(e):
             retrain_and_reload()
-            probs = run_model_probs(Xs)
+            probs = run_model_probs(X)
         else:
             raise
 
@@ -2276,7 +2370,7 @@ def generate_diagnosis(data):
 
     master_threshold_pct = get_model_threshold_pct('master')
     return {
-        'prediction': int(master_pct >= master_threshold_pct),
+        'prediction': int(raw_master_pct >= master_threshold_pct),
         'master_probability': master_pct,
         'raw_model_probability': raw_master_pct,
         'clinical_severity_score': clinical_severity_pct,
@@ -2305,13 +2399,19 @@ def health():
     return cors({'status':'ok','version':'2.0-AGI','models':len(MODELS),
                  'accuracy': META['models']['master']['accuracy'],
                  'auc': META['models']['master']['auc'],
+                 'image_upload_field_fallback': True,
+                 'image_upload_fields': {
+                     'ecg': ['ecg_image', 'file'],
+                     'mri': ['mri_image', 'file'],
+                     'cathlab': ['cathlab_image', 'file'],
+                 },
                  'timestamp': datetime.now().isoformat()})
 
 
 @app.route('/api/ready')
 def ready():
     try:
-        if len(MODELS) != len(MODEL_KEYS) or scaler is None:
+        if len(MODELS) != len(MODEL_KEYS) or len(MODEL_SCALERS) != len(MODEL_KEYS):
             return cors({'status': 'not_ready', 'reason': 'models_not_loaded'}, 503)
         conn = get_db()
         try:
@@ -2623,7 +2723,12 @@ def ecg_realtime():
     exang = int(_safe_float(request.args.get('exang', 0), 0))
     risk_pct = _safe_float(request.args.get('risk', 40), 40)
     seconds = _safe_float(request.args.get('seconds', 6), 6)
+    sample_rate = int(_safe_float(request.args.get('sample_rate', 300), 300))
+    lead = str(request.args.get('lead', 'II') or 'II')
+    noise_level = _safe_float(request.args.get('noise_level', 0.02), 0.02)
+    arrhythmia = str(request.args.get('arrhythmia', 'auto') or 'auto')
     points = int(_safe_float(request.args.get('points', 300), 300))
+    live_tick = _safe_float(request.args.get('tick', 0), 0)
     data = {
         'age': age,
         'thalach': hr,
@@ -2631,13 +2736,31 @@ def ecg_realtime():
         'oldpeak': oldpeak,
         'exang': exang,
     }
-    signal = simulate_ecg(data, risk_pct, seconds=seconds, sample_rate=300, out_points=points)
+    signal = simulate_ecg(
+        data,
+        risk_pct,
+        seconds=seconds,
+        sample_rate=sample_rate,
+        out_points=points,
+        lead=lead,
+        noise_level=noise_level,
+        arrhythmia=arrhythmia,
+    )
+    if live_tick and len(signal) > 1:
+        sec = max(_safe_float(seconds, 6), 0.1)
+        phase = (live_tick / 1000.0) % sec
+        shift = int((phase / sec) * len(signal))
+        if shift:
+            signal = signal[shift:] + signal[:shift]
     effective_rate = round(len(signal) / max(_safe_float(seconds, 6), 0.1), 2)
     return cors({
         'signal': signal,
         'hr': hr,
         'sample_rate': effective_rate,
         'duration_sec': round(_safe_float(seconds, 6), 2),
+        'lead': lead,
+        'noise_level': round(_safe_float(noise_level, 0.02), 3),
+        'arrhythmia': arrhythmia,
         'risk_pct': round(risk_pct, 1),
         'points': len(signal),
     })
@@ -2645,11 +2768,13 @@ def ecg_realtime():
 @app.route('/api/ecg-image-summary', methods=['POST'])
 def ecg_image_summary():
     try:
-        if 'ecg_image' not in request.files:
-            return cors({'error': "Missing file field 'ecg_image'."}, 400)
-        file_storage = request.files['ecg_image']
+        file_storage = _extract_uploaded_image('ecg_image')
+        if not file_storage:
+            return cors({'error': "No image received. Upload PNG/JPG/JPEG as multipart file."}, 400)
         if not file_storage or not file_storage.filename:
             return cors({'error': 'No ECG image selected.'}, 400)
+        if not _is_allowed_medical_image(file_storage):
+            return cors({'error': 'Only PNG/JPG/JPEG ECG images are supported.'}, 400)
         out = summarize_ecg_image(file_storage)
         out['timestamp'] = datetime.now().isoformat()
         return cors(out)
@@ -2662,11 +2787,13 @@ def ecg_image_summary():
 @app.route('/api/mri-image-summary', methods=['POST'])
 def mri_image_summary():
     try:
-        if 'mri_image' not in request.files:
-            return cors({'error': "Missing file field 'mri_image'."}, 400)
-        file_storage = request.files['mri_image']
+        file_storage = _extract_uploaded_image('mri_image')
+        if not file_storage:
+            return cors({'error': "No image received. Upload PNG/JPG/JPEG as multipart file."}, 400)
         if not file_storage or not file_storage.filename:
             return cors({'error': 'No MRI image selected.'}, 400)
+        if not _is_allowed_medical_image(file_storage):
+            return cors({'error': 'Only PNG/JPG/JPEG MRI images are supported.'}, 400)
         out = summarize_cardiac_image(file_storage, modality='mri')
         out['timestamp'] = datetime.now().isoformat()
         return cors(out)
@@ -2679,11 +2806,13 @@ def mri_image_summary():
 @app.route('/api/cathlab-image-summary', methods=['POST'])
 def cathlab_image_summary():
     try:
-        if 'cathlab_image' not in request.files:
-            return cors({'error': "Missing file field 'cathlab_image'."}, 400)
-        file_storage = request.files['cathlab_image']
+        file_storage = _extract_uploaded_image('cathlab_image')
+        if not file_storage:
+            return cors({'error': "No image received. Upload PNG/JPG/JPEG as multipart file."}, 400)
         if not file_storage or not file_storage.filename:
             return cors({'error': 'No Cath Lab image selected.'}, 400)
+        if not _is_allowed_medical_image(file_storage):
+            return cors({'error': 'Only PNG/JPG/JPEG Cath Lab images are supported.'}, 400)
         out = summarize_cardiac_image(file_storage, modality='cathlab')
         out['timestamp'] = datetime.now().isoformat()
         return cors(out)
