@@ -24,16 +24,18 @@
   ],
   "models": {
     "master": {
-      "accuracy": 81.2,
-      "auc": 0.948,
-      "train_accuracy": 86.2,
-      "cv_auc": 0.954,
-      "selected_model": "stacking",
-      "calibration": "sigmoid",
-      "brier": 0.0847,
-      "log_loss": 0.287,
-      "ece": 0.0273,
-      "threshold": 0.145
+      "accuracy": 75.3,
+      "auc": 0.914,
+      "train_accuracy": 82.9,
+      "cv_auc": 0.896,
+      "selected_model": "voting_a",
+      "calibration": "isotonic",
+      "brier": 0.11,
+      "log_loss": 0.3658,
+      "ece": 0.0701,
+      "threshold": 0.17,
+      "coverage_at_95_accuracy": 0.2011,
+      "actionable_accuracy_target": 0.95
     },
     "cad": {
       "accuracy": 85.4,
@@ -45,7 +47,9 @@
       "brier": 0.0669,
       "log_loss": 0.2177,
       "ece": 0.0224,
-      "threshold": 0.16
+      "threshold": 0.16,
+      "coverage_at_95_accuracy": 0.8,
+      "actionable_accuracy_target": 0.95
     },
     "hf": {
       "accuracy": 87.3,
@@ -57,7 +61,9 @@
       "brier": 0.0727,
       "log_loss": 0.2425,
       "ece": 0.0307,
-      "threshold": 0.125
+      "threshold": 0.125,
+      "coverage_at_95_accuracy": 0.85,
+      "actionable_accuracy_target": 0.95
     },
     "arr": {
       "accuracy": 78.1,
@@ -69,7 +75,9 @@
       "brier": 0.0909,
       "log_loss": 0.2797,
       "ece": 0.0276,
-      "threshold": 0.125
+      "threshold": 0.125,
+      "coverage_at_95_accuracy": 0.7,
+      "actionable_accuracy_target": 0.95
     },
     "mi": {
       "accuracy": 91.2,
@@ -81,38 +89,40 @@
       "brier": 0.0438,
       "log_loss": 0.1472,
       "ece": 0.0196,
-      "threshold": 0.17
+      "threshold": 0.17,
+      "coverage_at_95_accuracy": 0.9,
+      "actionable_accuracy_target": 0.95
     }
   },
   "feature_importances": {
-    "cp": 0.2122,
-    "thal": 0.1199,
-    "ca": 0.0891,
-    "exang": 0.0881,
-    "age": 0.067,
-    "ejection_fraction": 0.0665,
-    "oldpeak": 0.0538,
-    "bnp": 0.0482,
-    "troponin": 0.0462,
-    "thalach": 0.04,
-    "chol": 0.0377,
-    "trestbps": 0.0267,
-    "bmi": 0.0264,
-    "creatinine": 0.0254,
-    "smoking": 0.0161,
-    "sex": 0.01,
-    "diabetes": 0.0067,
-    "restecg": 0.0064,
-    "slope": 0.0064,
-    "family_history": 0.0039,
-    "fbs": 0.0032
+    "cp": 0.156,
+    "thal": 0.0752,
+    "troponin": 0.0723,
+    "oldpeak": 0.0693,
+    "exang": 0.0685,
+    "age": 0.0648,
+    "chol": 0.0647,
+    "thalach": 0.0598,
+    "ca": 0.0551,
+    "bnp": 0.0528,
+    "ejection_fraction": 0.0502,
+    "bmi": 0.0449,
+    "creatinine": 0.0439,
+    "trestbps": 0.0423,
+    "sex": 0.0283,
+    "slope": 0.0126,
+    "restecg": 0.0106,
+    "smoking": 0.0103,
+    "fbs": 0.0062,
+    "diabetes": 0.0061,
+    "family_history": 0.006
   },
   "disease_prevalence": {
     "cad": 0.48,
     "hf": 0.32,
     "arr": 0.3,
     "mi": 0.22,
-    "master": 0.525
+    "master": 0.54
   },
   "master_training_source": {
     "uci_dir": "/Users/chintuboppana/Downloads/heart+disease",
@@ -125,9 +135,9 @@
   "master_training_blend": {
     "mode": "hybrid_real_synthetic",
     "real_rows": 920,
-    "synthetic_rows": 4600,
-    "real_fraction": 0.167,
-    "synth_factor": 5.0
+    "synthetic_rows": 920,
+    "real_fraction": 0.5,
+    "synth_factor": 1.0
   },
   "split_index_path": "models/train_test_splits.json"
 }

@@ -65,7 +65,24 @@ SAHEART_CANDIDATES = [
     'data/SAheart.RData',
 ]
 
-MASTER_SYNTH_FACTOR = 5.0
+
+def _read_env_float(name, default, low=None, high=None):
+    raw = str(os.environ.get(name, '')).strip()
+    if not raw:
+        return float(default)
+    try:
+        val = float(raw)
+    except Exception:
+        return float(default)
+    if low is not None and val < float(low):
+        val = float(low)
+    if high is not None and val > float(high):
+        val = float(high)
+    return float(val)
+
+
+# Real-data-first default blend. Can be overridden via env MASTER_SYNTH_FACTOR.
+MASTER_SYNTH_FACTOR = _read_env_float('MASTER_SYNTH_FACTOR', 1.0, low=0.0, high=10.0)
 SPLIT_INDEX_PATH = 'models/train_test_splits.json'
 
 
@@ -505,7 +522,60 @@ def risk_tier_label(prob_pct):
     return 'CRITICAL'
 
 
-def build_eval_metrics(y_true, y_prob, y_pred):
+def coverage_accuracy_report(y_true, y_prob, decision_threshold, target_accuracy=0.95):
+    y_true_arr = np.asarray(y_true).astype(int)
+    y_prob_arr = np.asarray(y_prob, dtype=float)
+    n = len(y_true_arr)
+    if n == 0:
+        return {
+            'target_accuracy': float(target_accuracy),
+            'max_coverage_at_target_accuracy': None,
+            'best_operating_point': None,
+            'points': [],
+        }
+
+    threshold = float(decision_threshold)
+    pred_label = (y_prob_arr >= threshold).astype(int)
+    # Confidence of the predicted class: p for positive predictions, (1-p) for negatives.
+    confidence = np.where(pred_label == 1, y_prob_arr, 1.0 - y_prob_arr)
+    order = np.argsort(-confidence)
+    coverage_levels = [1.00, 0.95, 0.90, 0.85, 0.80, 0.75, 0.70, 0.60, 0.50, 0.40, 0.30, 0.20, 0.10]
+    points = []
+    seen_counts = set()
+    for cov in coverage_levels:
+        keep = int(round(float(cov) * n))
+        keep = max(1, min(n, keep))
+        if keep in seen_counts:
+            continue
+        seen_counts.add(keep)
+        idx = order[:keep]
+        stats = threshold_metrics(y_true_arr[idx], y_prob_arr[idx], threshold)
+        points.append({
+            'coverage': round(float(keep / n), 4),
+            'count': int(keep),
+            'accuracy': round(float(stats['accuracy']), 4),
+            'recall': round(float(stats['recall']), 4),
+            'specificity': round(float(stats['specificity']), 4),
+            'precision': round(float(stats['precision']), 4),
+            'f2': round(float(stats['f2']), 4),
+        })
+
+    hits = [p for p in points if float(p['accuracy']) >= float(target_accuracy)]
+    max_cov = max((float(p['coverage']) for p in hits), default=None)
+    if hits:
+        best = max(hits, key=lambda p: (float(p['coverage']), float(p['recall']), float(p['specificity'])))
+    else:
+        best = max(points, key=lambda p: (float(p['accuracy']), float(p['coverage'])))
+
+    return {
+        'target_accuracy': float(target_accuracy),
+        'max_coverage_at_target_accuracy': round(float(max_cov), 4) if max_cov is not None else None,
+        'best_operating_point': best,
+        'points': points,
+    }
+
+
+def build_eval_metrics(y_true, y_prob, y_pred, decision_threshold=0.5):
     y_true_arr = np.asarray(y_true).astype(int)
     y_prob_arr = np.asarray(y_prob, dtype=float)
     y_pred_arr = np.asarray(y_pred).astype(int)
@@ -518,6 +588,12 @@ def build_eval_metrics(y_true, y_prob, y_pred):
         {'mean_predicted': round(float(mp), 4), 'fraction_positive': round(float(fp), 4)}
         for mp, fp in zip(mean_pred, frac_pos)
     ]
+    coverage_report = coverage_accuracy_report(
+        y_true=y_true_arr,
+        y_prob=y_prob_arr,
+        decision_threshold=float(decision_threshold),
+        target_accuracy=0.95,
+    )
     return {
         'accuracy': round(float(accuracy_score(y_true_arr, y_pred_arr)), 4),
         'roc_auc': round(float(auc), 4),
@@ -532,6 +608,7 @@ def build_eval_metrics(y_true, y_prob, y_pred):
             'tp': int(cm[1, 1]),
         },
         'calibration_curve': cal_bins,
+        'coverage_vs_accuracy': coverage_report,
     }
 
 
@@ -681,6 +758,7 @@ def compute_shap_importance(model, X_sample):
 
 def train():
     print("🧬 Building training datasets…")
+    print(f"   Master synthetic blend factor: {MASTER_SYNTH_FACTOR:.2f}")
     df = generate_dataset(6000)
     print(f"   Synthetic samples: {len(df)}")
     real_X, real_y, real_source = load_real_master_dataset()
@@ -764,10 +842,18 @@ def train():
             'ece': round(float(ece), 4),
             'threshold': round(float(threshold), 3),
         }
-        eval_report['models'][key] = build_eval_metrics(y_te_out, prob_out, pred_out)
+        eval_report['models'][key] = build_eval_metrics(
+            y_te_out,
+            prob_out,
+            pred_out,
+            decision_threshold=float(threshold),
+        )
         eval_report['models'][key]['threshold'] = round(float(threshold), 4)
         eval_report['models'][key]['selected_model'] = model_name
         eval_report['models'][key]['calibration'] = calibration_method
+        coverage95 = eval_report['models'][key].get('coverage_vs_accuracy', {}).get('max_coverage_at_target_accuracy')
+        models_meta[key]['coverage_at_95_accuracy'] = coverage95
+        models_meta[key]['actionable_accuracy_target'] = 0.95
         shap_imp = compute_shap_importance(clf, X_te_s.head(200))
         if shap_imp is not None:
             models_meta[key]['shap_feature_importance'] = shap_imp
