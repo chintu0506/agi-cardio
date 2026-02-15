@@ -3,7 +3,7 @@ AGI-Driven Intelligent Cardiovascular Diagnostic System
 Flask API — v2.0 (Multimodal | Explainable | Conversational)
 """
 
-import json, os, sys, math, re, random, subprocess, threading
+import json, os, sys, math, re, random, subprocess, threading, hashlib
 from datetime import datetime, timedelta
 import joblib, numpy as np, pandas as pd
 from flask import Flask, request, jsonify, Response, render_template_string
@@ -1625,27 +1625,129 @@ def precautions_text(message):
     return "\n".join(lines)
 
 # ── ECG simulation data ───────────────────────────────────────────────────────
-def simulate_ecg(patient_data, risk_pct):
-    """Generate a plausible ECG-like waveform dataset for visualization."""
-    np.random.seed(int(patient_data.get('age', 50)))
-    t = np.linspace(0, 4, 1200)
-    beats_per_sec = patient_data.get('thalach', 75) / 60 * 0.7
-    signal = []
-    for i, ti in enumerate(t):
-        phase = (ti * beats_per_sec) % 1.0
-        # PQRST waveform
-        p_wave   = 0.25 * math.exp(-((phase - 0.15)**2) / 0.001)
-        q_wave   = -0.15 * math.exp(-((phase - 0.28)**2) / 0.0004)
-        r_wave   = 1.4  * math.exp(-((phase - 0.32)**2) / 0.0003)
-        s_wave   = -0.35 * math.exp(-((phase - 0.37)**2) / 0.0004)
-        t_wave   = 0.35 * math.exp(-((phase - 0.52)**2) / 0.003)
-        baseline = 0.0
-        if patient_data.get('restecg') == 1 and risk_pct > 50:
-            baseline = -0.12 * math.sin(phase * math.pi)  # ST depression
-        noise = np.random.normal(0, 0.015)
-        val = p_wave + q_wave + r_wave + s_wave + t_wave + baseline + noise
-        signal.append(round(val, 4))
-    return signal[::4]  # downsample to 300 points
+def _clamp(x, lo, hi):
+    return max(lo, min(hi, x))
+
+
+def _stable_seed(patient_data, risk_pct):
+    seed_fields = [
+        patient_data.get("age", 50),
+        patient_data.get("sex", 0),
+        patient_data.get("thalach", 75),
+        patient_data.get("restecg", 0),
+        patient_data.get("oldpeak", 0),
+        patient_data.get("exang", 0),
+        round(_safe_float(risk_pct, 40.0), 2),
+    ]
+    raw = "|".join(str(x) for x in seed_fields).encode("utf-8")
+    digest = hashlib.sha256(raw).hexdigest()[:16]
+    return int(digest, 16) % (2**32 - 1)
+
+
+def simulate_ecg(patient_data, risk_pct, seconds=6.0, sample_rate=300, out_points=300):
+    """Generate a physiologically-shaped synthetic ECG waveform."""
+    seconds = float(_clamp(_safe_float(seconds, 6.0), 2.0, 20.0))
+    sample_rate = int(_clamp(int(_safe_float(sample_rate, 300)), 120, 500))
+    out_points = int(_clamp(int(_safe_float(out_points, 300)), 120, 2400))
+
+    hr = _safe_float(patient_data.get("thalach"), 75.0)
+    hr = _clamp(hr, 40.0, 190.0)
+    restecg = int(_clamp(int(_safe_float(patient_data.get("restecg"), 0)), 0, 2))
+    oldpeak = _clamp(_safe_float(patient_data.get("oldpeak"), 0.0), 0.0, 6.0)
+    exang = int(_clamp(int(_safe_float(patient_data.get("exang"), 0)), 0, 1))
+    risk_norm = _clamp(_safe_float(risk_pct, 40.0) / 100.0, 0.0, 1.0)
+
+    seed = _stable_seed(patient_data, risk_pct)
+    rng = np.random.default_rng(seed)
+
+    n = max(3, int(round(seconds * sample_rate)))
+    t = np.arange(n, dtype=np.float64) / float(sample_rate)
+    signal = np.zeros(n, dtype=np.float64)
+
+    # Beat schedule with mild HRV and optional ectopic/irregular timing.
+    arrhythmia_strength = _clamp(
+        0.15 + (0.55 * max(0.0, risk_norm - 0.5)) + (0.2 if exang else 0.0) + (0.15 if restecg == 1 else 0.0),
+        0.05,
+        0.9,
+    )
+    beat_starts = []
+    b = 0.0
+    while b < (seconds + 1.2):
+        beat_starts.append(b)
+        local_hr = hr * (1.0 + 0.03 * math.sin(2.0 * math.pi * 0.12 * b) + rng.normal(0.0, 0.01 + 0.03 * arrhythmia_strength))
+        local_hr = _clamp(local_hr, 35.0, 200.0)
+        period = 60.0 / local_hr
+        if rng.random() < (0.03 + 0.12 * arrhythmia_strength):
+            period *= rng.uniform(0.65, 1.35)
+        period = _clamp(period, 0.32, 1.7)
+        b += period
+
+    # Morphology amplitude shaping by risk/ECG class.
+    p_amp = 0.12 * (1.0 - 0.20 * risk_norm)
+    q_amp = -0.16 * (1.0 + 0.18 * risk_norm)
+    r_amp = 1.15 * (1.0 - 0.35 * risk_norm)
+    s_amp = -0.30 * (1.0 + 0.12 * risk_norm)
+    t_amp = 0.34 * (1.0 - 0.42 * risk_norm)
+    if restecg == 2:  # LVH-like pattern tends to show taller QRS.
+        r_amp *= 1.2
+        s_amp *= 1.1
+        t_amp *= 0.88
+    if restecg == 1:  # ischemic-like ST/T distortion.
+        t_amp *= 0.8
+
+    for beat_start in beat_starts:
+        local_hr = hr * (1.0 + 0.02 * math.sin(2.0 * math.pi * 0.15 * beat_start))
+        period = _clamp(60.0 / _clamp(local_hr, 35.0, 200.0), 0.32, 1.7)
+        p_c = beat_start + 0.18 * period
+        q_c = beat_start + 0.34 * period
+        r_c = beat_start + 0.375 * period
+        s_c = beat_start + 0.415 * period
+        t_c = beat_start + 0.62 * period
+
+        p_w = 0.05 * period
+        q_w = 0.014 * period
+        r_w = 0.012 * period
+        s_w = 0.016 * period
+        t_w = 0.08 * period
+
+        signal += p_amp * np.exp(-0.5 * ((t - p_c) / p_w) ** 2)
+        signal += q_amp * np.exp(-0.5 * ((t - q_c) / q_w) ** 2)
+        signal += r_amp * np.exp(-0.5 * ((t - r_c) / r_w) ** 2)
+        signal += s_amp * np.exp(-0.5 * ((t - s_c) / s_w) ** 2)
+        signal += t_amp * np.exp(-0.5 * ((t - t_c) / t_w) ** 2)
+
+        # ST-segment deviation window.
+        st_left = s_c + (1.4 * s_w)
+        st_right = t_c - (2.0 * t_w)
+        if st_right > st_left:
+            if restecg == 1:
+                st_shift = -(0.035 + 0.075 * risk_norm + 0.012 * oldpeak)
+            elif restecg == 2:
+                st_shift = 0.01 + 0.02 * risk_norm
+            else:
+                st_shift = -0.008 * risk_norm
+            mask = (t >= st_left) & (t <= st_right)
+            signal[mask] += st_shift
+
+    baseline = (
+        0.025 * np.sin(2.0 * math.pi * 0.33 * t + rng.uniform(0, 2 * math.pi))
+        + 0.012 * np.sin(2.0 * math.pi * 0.08 * t + rng.uniform(0, 2 * math.pi))
+    )
+    muscle_noise = 0.005 * (1.0 + risk_norm) * np.sin(2.0 * math.pi * 24.0 * t + rng.uniform(0, 2 * math.pi))
+    white_noise = rng.normal(0.0, 0.004 + (0.010 * risk_norm) + (0.008 * arrhythmia_strength), n)
+    signal = signal + baseline + muscle_noise + white_noise
+
+    # Keep display range stable while preserving morphology.
+    peak = float(np.max(np.abs(signal))) if signal.size else 1.0
+    if peak > 2.2:
+        signal *= (2.2 / peak)
+
+    if out_points == n:
+        return [round(float(x), 4) for x in signal]
+    idx_src = np.linspace(0.0, float(n - 1), n)
+    idx_dst = np.linspace(0.0, float(n - 1), out_points)
+    resampled = np.interp(idx_dst, idx_src, signal)
+    return [round(float(x), 4) for x in resampled]
 
 # ── Wearable data simulation ──────────────────────────────────────────────────
 def simulate_wearable_trends(patient_data):
@@ -2200,11 +2302,31 @@ def default_patient():
 @app.route('/api/ecg-realtime')
 def ecg_realtime():
     """Stream a synthetic ECG beat."""
-    age = int(request.args.get('age', 55))
-    hr  = int(request.args.get('hr', 72))
-    data = {'age': age, 'thalach': hr, 'restecg': int(request.args.get('restecg',0))}
-    signal = simulate_ecg(data, 40)
-    return cors({'signal': signal, 'hr': hr, 'sample_rate': 300})
+    age = int(_safe_float(request.args.get('age', 55), 55))
+    hr = int(_safe_float(request.args.get('hr', 72), 72))
+    restecg = int(_safe_float(request.args.get('restecg', 0), 0))
+    oldpeak = _safe_float(request.args.get('oldpeak', 0), 0)
+    exang = int(_safe_float(request.args.get('exang', 0), 0))
+    risk_pct = _safe_float(request.args.get('risk', 40), 40)
+    seconds = _safe_float(request.args.get('seconds', 6), 6)
+    points = int(_safe_float(request.args.get('points', 300), 300))
+    data = {
+        'age': age,
+        'thalach': hr,
+        'restecg': restecg,
+        'oldpeak': oldpeak,
+        'exang': exang,
+    }
+    signal = simulate_ecg(data, risk_pct, seconds=seconds, sample_rate=300, out_points=points)
+    effective_rate = round(len(signal) / max(_safe_float(seconds, 6), 0.1), 2)
+    return cors({
+        'signal': signal,
+        'hr': hr,
+        'sample_rate': effective_rate,
+        'duration_sec': round(_safe_float(seconds, 6), 2),
+        'risk_pct': round(risk_pct, 1),
+        'points': len(signal),
+    })
 
 @app.route('/api/ecg-image-summary', methods=['POST'])
 def ecg_image_summary():
