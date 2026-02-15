@@ -1,0 +1,33 @@
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
+
+# Python
+**/__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Node/frontend
+**/node_modules/
+frontend/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Backend runtime artifacts
+backend/data/*.db
+backend/uploads/
+
+# Local generated models/artifacts
+models/*.pkl
+backend/models/*.pkl
+backend/models/eval_report.json

@@ -1,0 +1,128 @@
+{
+  "features": [
+    "age",
+    "sex",
+    "cp",
+    "trestbps",
+    "chol",
+    "fbs",
+    "restecg",
+    "thalach",
+    "exang",
+    "oldpeak",
+    "slope",
+    "ca",
+    "thal",
+    "bmi",
+    "smoking",
+    "diabetes",
+    "family_history",
+    "creatinine",
+    "bnp",
+    "troponin",
+    "ejection_fraction"
+  ],
+  "models": {
+    "master": {
+      "accuracy": 88.9,
+      "auc": 0.948,
+      "train_accuracy": 94.4,
+      "cv_auc": 0.95,
+      "selected_model": "stacking",
+      "calibration": "sigmoid",
+      "brier": 0.0847,
+      "log_loss": 0.2869,
+      "threshold": 0.5
+    },
+    "cad": {
+      "accuracy": 91.1,
+      "auc": 0.972,
+      "train_accuracy": 95.6,
+      "cv_auc": 0.976,
+      "selected_model": "stacking",
+      "calibration": "isotonic",
+      "brier": 0.0668,
+      "log_loss": 0.2173,
+      "threshold": 0.53
+    },
+    "hf": {
+      "accuracy": 90.0,
+      "auc": 0.96,
+      "train_accuracy": 96.1,
+      "cv_auc": 0.964,
+      "selected_model": "stacking",
+      "calibration": "isotonic",
+      "brier": 0.0706,
+      "log_loss": 0.2316,
+      "threshold": 0.43
+    },
+    "arr": {
+      "accuracy": 86.8,
+      "auc": 0.941,
+      "train_accuracy": 94.2,
+      "cv_auc": 0.952,
+      "selected_model": "stacking",
+      "calibration": "sigmoid",
+      "brier": 0.092,
+      "log_loss": 0.2892,
+      "threshold": 0.48
+    },
+    "mi": {
+      "accuracy": 94.3,
+      "auc": 0.982,
+      "train_accuracy": 96.7,
+      "cv_auc": 0.977,
+      "selected_model": "stacking",
+      "calibration": "sigmoid",
+      "brier": 0.0426,
+      "log_loss": 0.1469,
+      "threshold": 0.44
+    }
+  },
+  "feature_importances": {
+    "cp": 0.2122,
+    "thal": 0.1199,
+    "ca": 0.0891,
+    "exang": 0.0881,
+    "age": 0.067,
+    "ejection_fraction": 0.0665,
+    "oldpeak": 0.0538,
+    "bnp": 0.0482,
+    "troponin": 0.0462,
+    "thalach": 0.04,
+    "chol": 0.0377,
+    "trestbps": 0.0267,
+    "bmi": 0.0264,
+    "creatinine": 0.0254,
+    "smoking": 0.0161,
+    "sex": 0.01,
+    "diabetes": 0.0067,
+    "restecg": 0.0064,
+    "slope": 0.0064,
+    "family_history": 0.0039,
+    "fbs": 0.0032
+  },
+  "disease_prevalence": {
+    "cad": 0.48,
+    "hf": 0.32,
+    "arr": 0.3,
+    "mi": 0.22,
+    "master": 0.525
+  },
+  "master_training_source": {
+    "uci_dir": "/Users/chintuboppana/Downloads/heart+disease",
+    "uci_rows": 920,
+    "hf_support_path": "/Users/chintuboppana/Downloads/heart_failure_clinical_records_dataset.csv",
+    "hf_support_rows": 299,
+    "saheart_path": "/Users/chintuboppana/Downloads/SAHeart.csv",
+    "family_history_rate": 0.416
+  },
+  "master_training_blend": {
+    "mode": "hybrid_real_synthetic",
+    "real_rows": 920,
+    "synthetic_rows": 4600,
+    "real_fraction": 0.167,
+    "synth_factor": 5.0
+  },
+  "split_index_path": "models/train_test_splits.json"
+}
