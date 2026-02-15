@@ -9,7 +9,7 @@ import joblib, numpy as np, pandas as pd
 from flask import Flask, request, jsonify, Response, render_template_string
 import logging
 from io import BytesIO
-from storage import get_db, init_db, UPLOAD_DIR
+from storage import get_db, init_db, UPLOAD_DIR, log_audit_event
 from auth_access import install_auth_access_routes, SESSIONS
 
 try:
@@ -1349,6 +1349,108 @@ def get_recommendations(p, probs, risk_tier, master_pct=None):
     recs.append({'priority':'ROUTINE','text':'🥗 Mediterranean diet + 150 min/week moderate aerobic activity'})
     return recs[:8]
 
+
+def _normalize_rec_text(text):
+    raw = str(text or "").lower()
+    raw = re.sub(r"[^a-z0-9\s]", " ", raw)
+    raw = re.sub(r"\s+", " ", raw).strip()
+    return raw
+
+
+def _recommendation_key(text):
+    t = _normalize_rec_text(text)
+    if any(k in t for k in ["immediate cardiology referral", "same day", "acute mi"]):
+        return "acute_referral"
+    if "cardiology appointment" in t:
+        return "cardiology_followup"
+    if any(k in t for k in ["holter", "ecg monitoring", "arrhythmia"]):
+        return "rhythm_eval"
+    if any(k in t for k in ["echocardiogram", "echo", "bnp trend", "reduced ef"]):
+        return "hf_eval"
+    if any(k in t for k in ["stress test", "coronary ct", "cad risk"]):
+        return "cad_eval"
+    if any(k in t for k in ["hypertension", "bp", "blood pressure"]):
+        return "bp_control"
+    if any(k in t for k in ["cholesterol", "statin", "hypercholesterolaemia"]):
+        return "lipid_control"
+    if any(k in t for k in ["smoking cessation", "smoking"]):
+        return "smoking_cessation"
+    if any(k in t for k in ["glycaemic", "hba1c", "diabetes"]):
+        return "diabetes_control"
+    if any(k in t for k in ["weight management", "bmi"]):
+        return "weight_control"
+    if any(k in t for k in ["mediterranean diet", "aerobic activity", "exercise"]):
+        return "lifestyle_core"
+    if any(k in t for k in ["valvular", "doppler echocardiography"]):
+        return "valvular_eval"
+    if any(k in t for k in ["cardiomyopathy", "family risk"]):
+        return "cardiomyopathy_eval"
+    if any(k in t for k in ["pad risk", "abi", "lower-limb"]):
+        return "pad_eval"
+    if any(k in t for k in ["infective-pattern", "crp", "esr", "cultures"]):
+        return "infective_eval"
+    if any(k in t for k in ["pericardial", "inflammatory markers"]):
+        return "pericardial_eval"
+    return t[:70]
+
+
+def _priority_rank(priority):
+    order = {"URGENT": 4, "HIGH": 3, "MODERATE": 2, "ROUTINE": 1}
+    return order.get(str(priority or "").upper(), 0)
+
+
+def _sanitize_recommendations(recs):
+    # Deduplicate semantically similar items and remove urgency contradictions.
+    best_by_key = {}
+    for rec in recs:
+        if not isinstance(rec, dict):
+            continue
+        text = str(rec.get("text", "")).strip()
+        if not text:
+            continue
+        pr = str(rec.get("priority", "ROUTINE")).upper()
+        key = _recommendation_key(text)
+        prev = best_by_key.get(key)
+        if not prev or _priority_rank(pr) > _priority_rank(prev["priority"]):
+            best_by_key[key] = {"priority": pr, "text": text}
+
+    deduped = list(best_by_key.values())
+    has_urgent_or_high = any(_priority_rank(r["priority"]) >= 3 for r in deduped)
+    if has_urgent_or_high:
+        # Keep lifestyle guidance, but drop routine "schedule check-up" when urgent/high exists.
+        deduped = [
+            r for r in deduped
+            if not (
+                r["priority"] == "ROUTINE"
+                and ("routine cardiac check" in _normalize_rec_text(r["text"]))
+            )
+        ]
+
+    deduped.sort(key=lambda r: (-_priority_rank(r["priority"]), r["text"]))
+    return deduped[:12]
+
+
+def _condition_confidence_disclaimer(disease_id, probability, evidence_mode=None):
+    pct = float(_safe_num(probability, 0.0))
+    if evidence_mode == "rule-based-surrogate":
+        return (
+            "Surrogate confidence only: this condition is inferred from rule-based patterns, "
+            "not a dedicated disease-specific model. Confirm with targeted clinical tests."
+        )
+    if pct >= 85:
+        return (
+            "High-confidence AI signal, but not a standalone diagnosis. "
+            "Confirm clinically before treatment changes."
+        )
+    if pct >= 60:
+        return (
+            "Moderate-confidence AI signal. Use as decision support and correlate with symptoms, "
+            "exam, and confirmatory testing."
+        )
+    return (
+        "Lower-confidence AI signal. Treat as preliminary support information and verify clinically."
+    )
+
 def _safe_num(value, default=0.0):
     try:
         if value is None or value == '':
@@ -1670,13 +1772,23 @@ def simulate_ecg(patient_data, risk_pct, seconds=6.0, sample_rate=300, out_point
         0.05,
         0.9,
     )
-    beat_starts = []
+    severe_arrhythmia = arrhythmia_strength >= 0.62
+    beat_meta = []
     b = 0.0
+    pvc_carry_pause = False
     while b < (seconds + 1.2):
-        beat_starts.append(b)
+        beat = {"start": b, "pvc": False}
+        beat_meta.append(beat)
         local_hr = hr * (1.0 + 0.03 * math.sin(2.0 * math.pi * 0.12 * b) + rng.normal(0.0, 0.01 + 0.03 * arrhythmia_strength))
         local_hr = _clamp(local_hr, 35.0, 200.0)
         period = 60.0 / local_hr
+        if severe_arrhythmia and rng.random() < (0.08 + 0.18 * arrhythmia_strength):
+            beat["pvc"] = True
+            period *= rng.uniform(0.55, 0.78)  # early ectopic timing
+            pvc_carry_pause = True
+        elif pvc_carry_pause:
+            period *= rng.uniform(1.20, 1.45)  # compensatory pause
+            pvc_carry_pause = False
         if rng.random() < (0.03 + 0.12 * arrhythmia_strength):
             period *= rng.uniform(0.65, 1.35)
         period = _clamp(period, 0.32, 1.7)
@@ -1695,7 +1807,9 @@ def simulate_ecg(patient_data, risk_pct, seconds=6.0, sample_rate=300, out_point
     if restecg == 1:  # ischemic-like ST/T distortion.
         t_amp *= 0.8
 
-    for beat_start in beat_starts:
+    for beat in beat_meta:
+        beat_start = beat["start"]
+        is_pvc = bool(beat["pvc"])
         local_hr = hr * (1.0 + 0.02 * math.sin(2.0 * math.pi * 0.15 * beat_start))
         period = _clamp(60.0 / _clamp(local_hr, 35.0, 200.0), 0.32, 1.7)
         p_c = beat_start + 0.18 * period
@@ -1710,11 +1824,28 @@ def simulate_ecg(patient_data, risk_pct, seconds=6.0, sample_rate=300, out_point
         s_w = 0.016 * period
         t_w = 0.08 * period
 
-        signal += p_amp * np.exp(-0.5 * ((t - p_c) / p_w) ** 2)
-        signal += q_amp * np.exp(-0.5 * ((t - q_c) / q_w) ** 2)
-        signal += r_amp * np.exp(-0.5 * ((t - r_c) / r_w) ** 2)
-        signal += s_amp * np.exp(-0.5 * ((t - s_c) / s_w) ** 2)
-        signal += t_amp * np.exp(-0.5 * ((t - t_c) / t_w) ** 2)
+        beat_p_amp = p_amp
+        beat_q_amp = q_amp
+        beat_r_amp = r_amp
+        beat_s_amp = s_amp
+        beat_t_amp = t_amp
+        if is_pvc:
+            # PVC-like morphology: absent P, wider/deeper QRS, inverted smaller T.
+            beat_p_amp *= 0.15
+            beat_q_amp *= 1.35
+            beat_r_amp *= 0.72
+            beat_s_amp *= 1.95
+            beat_t_amp *= -0.55
+            q_w *= 1.9
+            r_w *= 2.4
+            s_w *= 2.1
+            t_w *= 1.2
+
+        signal += beat_p_amp * np.exp(-0.5 * ((t - p_c) / p_w) ** 2)
+        signal += beat_q_amp * np.exp(-0.5 * ((t - q_c) / q_w) ** 2)
+        signal += beat_r_amp * np.exp(-0.5 * ((t - r_c) / r_w) ** 2)
+        signal += beat_s_amp * np.exp(-0.5 * ((t - s_c) / s_w) ** 2)
+        signal += beat_t_amp * np.exp(-0.5 * ((t - t_c) / t_w) ** 2)
 
         # ST-segment deviation window.
         st_left = s_c + (1.4 * s_w)
@@ -1733,6 +1864,10 @@ def simulate_ecg(patient_data, risk_pct, seconds=6.0, sample_rate=300, out_point
         0.025 * np.sin(2.0 * math.pi * 0.33 * t + rng.uniform(0, 2 * math.pi))
         + 0.012 * np.sin(2.0 * math.pi * 0.08 * t + rng.uniform(0, 2 * math.pi))
     )
+    if severe_arrhythmia:
+        # Fine fibrillatory-like baseline activity in high-risk arrhythmic traces.
+        baseline += 0.010 * np.sin(2.0 * math.pi * 6.5 * t + rng.uniform(0, 2 * math.pi))
+        baseline += 0.006 * np.sin(2.0 * math.pi * 8.1 * t + rng.uniform(0, 2 * math.pi))
     muscle_noise = 0.005 * (1.0 + risk_norm) * np.sin(2.0 * math.pi * 24.0 * t + rng.uniform(0, 2 * math.pi))
     white_noise = rng.normal(0.0, 0.004 + (0.010 * risk_norm) + (0.008 * arrhythmia_strength), n)
     signal = signal + baseline + muscle_noise + white_noise
@@ -1925,10 +2060,136 @@ def summarize_cardiac_image(file_storage, modality='mri'):
         'precautions': precautions
     }
 
-def generate_diagnosis(data):
-    missing = [f for f in FEATURES if f not in data or data[f] == '']
+def _validate_diagnosis_payload(raw):
+    if not isinstance(raw, dict):
+        raise ValueError("Request payload must be a JSON object.")
+
+    unknown = sorted([k for k in raw.keys() if k not in FEATURES])
+    if unknown:
+        raise ValueError(
+            "Unknown fields in diagnosis payload: "
+            + ", ".join(unknown)
+            + ". Send only the required model fields."
+        )
+
+    missing = [f for f in FEATURES if f not in raw or raw[f] in (None, "")]
     if missing:
-        raise ValueError(f"Missing: {missing}")
+        raise ValueError("Missing required fields: " + ", ".join(missing))
+
+    cleaned = {}
+    errors = []
+    for f in FEATURES:
+        info = FEAT_INFO.get(f, {})
+        label = info.get("label", f)
+        val = raw.get(f)
+        try:
+            num = float(val)
+        except Exception:
+            errors.append(f"{label} must be numeric.")
+            continue
+        if not math.isfinite(num):
+            errors.append(f"{label} must be a finite number.")
+            continue
+
+        if info.get("cat"):
+            if not float(num).is_integer():
+                errors.append(f"{label} must be an integer category value.")
+                continue
+            as_int = int(num)
+            allowed = sorted(CAT_VALUES.get(f, {}).keys())
+            if allowed and as_int not in allowed:
+                errors.append(f"{label} must be one of {allowed}.")
+                continue
+            cleaned[f] = as_int
+            continue
+
+        low = info.get("low")
+        high = info.get("high")
+        if low is not None and num < float(low):
+            errors.append(f"{label} must be >= {low}.")
+            continue
+        if high is not None and num > float(high):
+            errors.append(f"{label} must be <= {high}.")
+            continue
+        cleaned[f] = float(num)
+
+    if errors:
+        preview = "; ".join(errors[:5])
+        if len(errors) > 5:
+            preview += f"; and {len(errors) - 5} more validation error(s)."
+        raise ValueError(preview)
+    return cleaned
+
+
+def _validate_profile_payload(body):
+    if not isinstance(body, dict):
+        raise ValueError("Profile payload must be a JSON object.")
+
+    full_name = str(body.get("full_name", "")).strip()
+    if not full_name:
+        raise ValueError("full_name is required.")
+    if len(full_name) > 120:
+        raise ValueError("full_name must be at most 120 characters.")
+
+    age_raw = body.get("age")
+    age = None
+    if age_raw not in (None, ""):
+        try:
+            age_val = float(age_raw)
+        except Exception:
+            raise ValueError("age must be a number.")
+        if not math.isfinite(age_val) or not age_val.is_integer():
+            raise ValueError("age must be an integer.")
+        age = int(age_val)
+        if age < 1 or age > 120:
+            raise ValueError("age must be between 1 and 120.")
+
+    sex_raw = body.get("sex")
+    sex = None
+    if sex_raw not in (None, ""):
+        try:
+            sex_val = float(sex_raw)
+        except Exception:
+            raise ValueError("sex must be numeric (0 for Female, 1 for Male).")
+        if not sex_val.is_integer():
+            raise ValueError("sex must be an integer category value.")
+        sex = int(sex_val)
+        if sex not in (0, 1):
+            raise ValueError("sex must be 0 (Female) or 1 (Male).")
+
+    notes = str(body.get("notes", "")).strip()
+    if len(notes) > 2000:
+        raise ValueError("notes must be at most 2000 characters.")
+
+    details = body.get("details") or {}
+    if not isinstance(details, dict):
+        raise ValueError("details must be an object.")
+    if len(details.keys()) > 40:
+        raise ValueError("details has too many keys (max 40).")
+
+    for k, v in details.items():
+        if not isinstance(k, str):
+            raise ValueError("details keys must be strings.")
+        if len(k) > 80:
+            raise ValueError("details keys must be at most 80 characters.")
+        if v is None:
+            continue
+        if isinstance(v, (dict, list)):
+            raise ValueError("details values must be scalar (string/number/bool).")
+        if len(str(v)) > 500:
+            raise ValueError(f"details value for '{k}' is too long (max 500 chars).")
+
+    return {
+        "full_name": full_name,
+        "age": age,
+        "sex": sex,
+        "notes": notes,
+        "details": details,
+    }
+
+
+def generate_diagnosis(data):
+    data = _validate_diagnosis_payload(data)
 
     X = pd.DataFrame([[float(data[f]) for f in FEATURES]], columns=FEATURES)
     Xs = pd.DataFrame(scaler.transform(X), columns=FEATURES)
@@ -1959,6 +2220,7 @@ def generate_diagnosis(data):
                 'key_markers': [FEAT_INFO.get(m,{}).get('label',m) for m in kb['key_markers']],
                 'treatments': kb['treatments'],
                 'urgent': pct > kb['urgency_threshold'] * 100,
+                'confidence_disclaimer': _condition_confidence_disclaimer(key, pct_display, evidence_mode='model'),
             })
 
     extended_probs = detect_extended_diseases(data)
@@ -1977,6 +2239,7 @@ def generate_diagnosis(data):
             'treatments': kb['treatments'],
             'urgent': pct >= 70,
             'evidence_mode': 'rule-based-surrogate',
+            'confidence_disclaimer': _condition_confidence_disclaimer(key, pct_display, evidence_mode='rule-based-surrogate'),
         })
     diseases.sort(key=lambda x: -x['probability'])
     primary_condition = build_primary_condition_summary(diseases, data)
@@ -1993,7 +2256,7 @@ def generate_diagnosis(data):
     })
     recs = get_recommendations(data, probs, tier, master_pct=master_pct)
     recs.extend(get_extended_recommendations(extended_probs))
-    recs = recs[:12]
+    recs = _sanitize_recommendations(recs)
     flags = flag_abnormals(data)
     input_requirements = get_input_requirements(data)
     fi = META['feature_importances']
@@ -2044,6 +2307,21 @@ def health():
                  'auc': META['models']['master']['auc'],
                  'timestamp': datetime.now().isoformat()})
 
+
+@app.route('/api/ready')
+def ready():
+    try:
+        if len(MODELS) != len(MODEL_KEYS) or scaler is None:
+            return cors({'status': 'not_ready', 'reason': 'models_not_loaded'}, 503)
+        conn = get_db()
+        try:
+            conn.execute("SELECT 1").fetchone()
+        finally:
+            conn.close()
+        return cors({'status': 'ready', 'timestamp': datetime.now().isoformat()})
+    except Exception as e:
+        return cors({'status': 'not_ready', 'reason': str(e)}, 503)
+
 @app.route('/api/model-info')
 def model_info():
     return cors({**META, 'version':'2.0', 'algorithm':'Voting Ensemble (RF+GBM+ET+LR)',
@@ -2091,16 +2369,16 @@ def create_profile():
     if not user:
         return cors({'error': 'Unauthorized'}, 401)
     body = request.get_json(force=True) or {}
-    full_name = str(body.get('full_name', '')).strip()
-    if not full_name:
-        return cors({'error': 'full_name is required'}, 400)
+    try:
+        validated = _validate_profile_payload(body)
+    except ValueError as e:
+        return cors({'error': str(e)}, 400)
 
-    age = body.get('age')
-    sex = body.get('sex')
-    notes = str(body.get('notes', '')).strip()
-    details = body.get('details') or {}
-    if not isinstance(details, dict):
-        return cors({'error': 'details must be an object'}, 400)
+    full_name = validated["full_name"]
+    age = validated["age"]
+    sex = validated["sex"]
+    notes = validated["notes"]
+    details = validated["details"]
     created_at = datetime.now().isoformat()
 
     conn = get_db()
@@ -2112,8 +2390,16 @@ def create_profile():
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (full_name, age, sex, owner_user_id, json.dumps(details), notes, created_at)
         )
-        conn.commit()
         profile_id = cur.lastrowid
+        log_audit_event(
+            conn,
+            user_id=owner_user_id,
+            action="CREATE_PROFILE",
+            entity_type="profile",
+            entity_id=profile_id,
+            payload={"full_name": full_name, "age": age, "sex": sex},
+        )
+        conn.commit()
         row = conn.execute(
             """SELECT id, full_name, age, sex, owner_user_id, details_json, notes, created_at
                FROM profiles WHERE id = ?""",
@@ -2142,6 +2428,14 @@ def profile_diagnoses(profile_id):
             return cors({'error': 'Forbidden for this profile'}, 403)
         if request.method == 'DELETE':
             deleted = conn.execute("DELETE FROM diagnoses WHERE profile_id = ?", (profile_id,)).rowcount
+            log_audit_event(
+                conn,
+                user_id=user.get("user_id"),
+                action="CLEAR_PROFILE_DIAGNOSES",
+                entity_type="diagnosis",
+                entity_id=profile_id,
+                payload={"profile_id": profile_id, "deleted_count": int(deleted)},
+            )
             conn.commit()
             return cors({'deleted_count': int(deleted), 'profile_id': profile_id})
         rows = conn.execute(
@@ -2181,6 +2475,14 @@ def delete_single_diagnosis(profile_id, diagnosis_id):
         if not d:
             return cors({'error': 'Diagnosis not found for this profile'}, 404)
         conn.execute("DELETE FROM diagnoses WHERE id = ? AND profile_id = ?", (diagnosis_id, profile_id))
+        log_audit_event(
+            conn,
+            user_id=user.get("user_id"),
+            action="DELETE_DIAGNOSIS",
+            entity_type="diagnosis",
+            entity_id=diagnosis_id,
+            payload={"profile_id": profile_id},
+        )
         conn.commit()
         return cors({'deleted_id': diagnosis_id, 'profile_id': profile_id})
     finally:
@@ -2218,6 +2520,18 @@ def diagnose_for_profile(profile_id):
                 json.dumps(report),
                 created_at
             )
+        )
+        log_audit_event(
+            conn,
+            user_id=user.get("user_id"),
+            action="CREATE_DIAGNOSIS",
+            entity_type="diagnosis",
+            entity_id=report.get('report_id'),
+            payload={
+                "profile_id": profile_id,
+                "risk_level": report.get('risk_tier', {}).get('level', ''),
+                "master_probability": report.get('master_probability', 0.0),
+            },
         )
         conn.commit()
         return cors(report)

@@ -56,6 +56,12 @@ if [ ! -f "backend/models/master_model.pkl" ]; then
   echo ""
 fi
 
+# Optional DB backup before app start (enabled by default)
+if [ "${AGI_DB_BACKUP_ON_START:-1}" = "1" ] && [ -f "backend/data/cardio.db" ]; then
+  echo "  💾  Creating startup DB backup..."
+  python3 backend/backup_db.py --label startup --max-backups "${AGI_DB_MAX_BACKUPS:-30}" >/tmp/agi_backup.log 2>&1 || true
+fi
+
 # Start backend
 BACKEND_PORT="$(pick_free_port 5000 40)" || { echo "❌ Could not find a free backend port"; exit 1; }
 echo "  🚀  Starting AGI API on http://localhost:${BACKEND_PORT}"

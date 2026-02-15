@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import './App.css'
+import AuthScreen from './components/AuthScreen'
+import PortalHeader from './components/PortalHeader'
+import CreateProfilePage from './pages/CreateProfilePage'
 
 const API_BASE_ENV = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:5000'
 
@@ -302,7 +305,6 @@ function App() {
   const [cathImageAnalyzing, setCathImageAnalyzing] = useState(false)
   const [defaultsAppliedFields, setDefaultsAppliedFields] = useState([])
   const [apiBase, setApiBase] = useState(API_BASE_ENV)
-  const [apiDraft, setApiDraft] = useState(API_BASE_ENV)
   const [patientUploadFile, setPatientUploadFile] = useState(null)
   const [patientUploadSummary, setPatientUploadSummary] = useState('')
   const [patientUploadType, setPatientUploadType] = useState('report')
@@ -354,6 +356,8 @@ function App() {
   const [doctorImageZoom, setDoctorImageZoom] = useState(1)
   const [doctorAcceptedPatientUploads, setDoctorAcceptedPatientUploads] = useState([])
   const [analyzerDragTarget, setAnalyzerDragTarget] = useState('')
+  const [patientView, setPatientView] = useState('workspace')
+  const [portalPage, setPortalPage] = useState('workspace')
 
   const activeProfile = useMemo(
     () => profiles.find((p) => String(p.id) === String(activeProfileId)) || null,
@@ -415,7 +419,6 @@ function App() {
     setError('')
     const base = baseArg || (await discoverBackendBase())
     setApiBase(base)
-    setApiDraft(base)
     try {
       const { response, data } = await fetchJsonSafe(`${base}/api/health`)
       if (!response.ok) throw new Error(data?.error || `Health check failed (${response.status})`)
@@ -568,6 +571,10 @@ function App() {
     }
   }, [patientDoctors, patientSelectedDoctorId])
 
+  useEffect(() => {
+    setPortalPage('workspace')
+  }, [viewerRole, authUser?.user_id])
+
   function authHeaders(extra = {}) {
     const headers = { ...extra }
     if (authToken) headers.Authorization = `Bearer ${authToken}`
@@ -640,6 +647,7 @@ function App() {
       setAuthToken(data.token)
       setAuthUser(data.user)
       setViewerRole(data?.user?.role === 'patient' ? 'patient' : 'doctor')
+      setPortalPage('workspace')
       setAuthStage('credentials')
       setOtpSession(null)
       setOtpCode('')
@@ -730,6 +738,7 @@ function App() {
     setSelectedDoctorSummaryId('')
     setDoctorPatientId('')
     setPatientUploadResult(null)
+    setPortalPage('workspace')
     setError('')
   }
 
@@ -1111,8 +1120,19 @@ function App() {
         body: JSON.stringify(payload),
       })
       if (!response.ok) throw new Error(data?.error || 'Profile creation failed')
+      setProfiles((prev) => {
+        if (prev.some((p) => String(p.id) === String(data.id))) return prev
+        return [{
+          id: data.id,
+          full_name: payload.full_name,
+          age: payload.age,
+          sex: payload.sex,
+          notes: payload.notes,
+        }, ...prev]
+      })
       await loadProfiles(apiBase)
       setActiveProfileId(String(data.id))
+      setPatientView('workspace')
       setProfileForm(DEFAULT_PROFILE_FORM)
       setForm(EMPTY_FORM)
       setResult(null)
@@ -1168,6 +1188,11 @@ function App() {
     setHistory([])
     setResult(null)
     setError('')
+  }
+
+  function openCreateProfile() {
+    setError('')
+    setPatientView('create-profile')
   }
 
   async function runPrediction() {
@@ -1534,113 +1559,51 @@ function App() {
 
   if (!authUser) {
     return (
-      <main className="app-shell">
-        <header className="topbar">
-          <div>
-            <h1>AGI CardioSense</h1>
-            <p>Secure Doctor and Patient access</p>
-            <div className="api-controls">
-              <input value={apiDraft} onChange={(e) => setApiDraft(e.target.value)} placeholder="API base URL" />
-              <button className="btn" onClick={() => bootstrap(apiDraft.trim())}>Reconnect API</button>
-            </div>
-          </div>
-          <div className="status-grid">
-            <div className="status-card"><span>API Base</span><strong>{apiBase}</strong></div>
-            <div className="status-card"><span>System</span><strong>{health?.status === 'ok' ? 'Online' : 'Checking...'}</strong></div>
-            <div className="status-card"><span>Model Accuracy</span><strong>{health ? `${health.accuracy}%` : '--'}</strong></div>
-          </div>
-        </header>
-
-        {error && <div className="alert">{error}</div>}
-
-        <section className="panel">
-          <h2>{authMode === 'login' ? 'Login' : 'Sign Up'}</h2>
-          <p className="muted">Signup uses OTP verification. Login uses password authentication.</p>
-          <div className="actions">
-            <button type="button" className={`btn ${authMode === 'login' ? 'primary' : ''}`} onClick={() => switchAuthMode('login')}>Login</button>
-            <button type="button" className={`btn ${authMode === 'signup' ? 'primary' : ''}`} onClick={() => switchAuthMode('signup')}>Sign Up</button>
-          </div>
-          {authStage === 'credentials' ? (
-            <>
-              {authMode === 'signup' ? (
-                <div className="profile-create-grid">
-                  <label><span>Full Name</span><input value={authForm.name} onChange={(e) => setAuthForm((p) => ({ ...p, name: e.target.value }))} /></label>
-                  <label><span>Email</span><input value={authForm.email} onChange={(e) => setAuthForm((p) => ({ ...p, email: e.target.value }))} /></label>
-                  <label><span>Password</span><input type="password" autoComplete="new-password" value={authForm.password} onChange={(e) => setAuthForm((p) => ({ ...p, password: e.target.value }))} /></label>
-                  <label><span>Role</span>
-                    <select value={authForm.role} onChange={(e) => setAuthForm((p) => ({ ...p, role: e.target.value }))}>
-                      <option value="patient">Patient</option>
-                      <option value="doctor">Doctor</option>
-                    </select>
-                  </label>
-                </div>
-              ) : (
-                <div className="profile-create-grid">
-                  <label><span>Email or Mobile</span><input value={authForm.login} onChange={(e) => setAuthForm((p) => ({ ...p, login: e.target.value }))} /></label>
-                  <label><span>Password</span><input type="password" autoComplete="current-password" value={authForm.password} onChange={(e) => setAuthForm((p) => ({ ...p, password: e.target.value }))} /></label>
-                </div>
-              )}
-              <div className="actions">
-                {authMode === 'signup' ? (
-                  <button type="button" className="btn primary" onClick={signUp} disabled={authLoading}>{authLoading ? 'Sending OTP...' : 'Send Signup OTP'}</button>
-                ) : (
-                  <button type="button" className="btn primary" onClick={login} disabled={authLoading}>{authLoading ? 'Authenticating...' : 'Login'}</button>
-                )}
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="muted">Enter OTP sent to your registered email. OTP valid for 5 minutes.</p>
-              <div className="profile-create-grid">
-                <label><span>OTP Code</span><input value={otpCode} onChange={(e) => setOtpCode(e.target.value)} placeholder="6-digit OTP" /></label>
-              </div>
-              <div className="actions">
-                <button type="button" className="btn primary" onClick={verifyOtp} disabled={authLoading}>{authLoading ? 'Verifying...' : 'Verify OTP'}</button>
-                <button type="button" className="btn" onClick={resendOtp} disabled={authLoading}>Resend OTP</button>
-                <button type="button" className="btn" onClick={() => setAuthStage('credentials')} disabled={authLoading}>Back</button>
-              </div>
-            </>
-          )}
-        </section>
-      </main>
+      <AuthScreen
+        health={health}
+        error={error}
+        authMode={authMode}
+        authStage={authStage}
+        authForm={authForm}
+        setAuthForm={setAuthForm}
+        authLoading={authLoading}
+        otpCode={otpCode}
+        setOtpCode={setOtpCode}
+        switchAuthMode={switchAuthMode}
+        signUp={signUp}
+        login={login}
+        verifyOtp={verifyOtp}
+        resendOtp={resendOtp}
+        setAuthStage={setAuthStage}
+      />
     )
   }
 
   return (
     <main className="app-shell">
-      <header className="topbar">
-        <div>
-          <h1>AGI CardioSense</h1>
-          <p>
-            {viewerRole === 'doctor'
-              ? 'Doctor Dashboard - full clinical decision support'
-              : 'Patient Dashboard - simplified care and precautions'}
-          </p>
-          <div className="role-switch">
-            <button className={`btn ${viewerRole === 'doctor' ? 'primary' : ''}`} disabled>
-              Doctor View
-            </button>
-            <button className={`btn ${viewerRole === 'patient' ? 'primary' : ''}`} disabled>
-              Patient View
-            </button>
-            <span className="active-user">Logged in: <b>{authUser.name}</b> ({authUser.user_id})</span>
-            <button className="btn" onClick={logoutAuth}>Logout</button>
-          </div>
-          <div className="api-controls">
-            <input value={apiDraft} onChange={(e) => setApiDraft(e.target.value)} placeholder="API base URL" />
-            <button className="btn" onClick={() => bootstrap(apiDraft.trim())}>Reconnect API</button>
-          </div>
-        </div>
-        <div className="status-grid">
-          <div className="status-card"><span>API Base</span><strong>{apiBase}</strong></div>
-          <div className="status-card"><span>System</span><strong>{health?.status === 'ok' ? 'Online' : 'Checking...'}</strong></div>
-          <div className="status-card"><span>Model Accuracy</span><strong>{health ? `${health.accuracy}%` : '--'}</strong></div>
-        </div>
-      </header>
+      <PortalHeader
+        viewerRole={viewerRole}
+        authUser={authUser}
+        logoutAuth={logoutAuth}
+        portalPage={portalPage}
+        setPortalPage={setPortalPage}
+        health={health}
+      />
 
       {error && <div className="alert">{error}</div>}
 
-      <section className="layout">
+      {viewerRole === 'patient' && patientView === 'create-profile' ? (
+        <CreateProfilePage
+          profileForm={profileForm}
+          setProfileForm={setProfileForm}
+          creatingProfile={creatingProfile}
+          createCompleteProfile={createCompleteProfile}
+          setPatientView={setPatientView}
+        />
+      ) : (
+      <>
+      {portalPage === 'workspace' && (
+      <section className="layout single-column">
         <aside className="panel profile-panel">
           <h2>{viewerRole === 'doctor' ? 'Doctor Workspace' : 'Patient Workspace'}</h2>
           <p>
@@ -1664,6 +1627,7 @@ function App() {
                 </label>
                 <div className="actions">
                   <button className="btn" onClick={() => bootstrap(apiBase)}>Refresh Profiles</button>
+                  <button className="btn primary" onClick={openCreateProfile}>Create New Profile</button>
                   <button className="btn" onClick={logoutProfile}>Logout Profile</button>
                 </div>
               </section>
@@ -1842,31 +1806,7 @@ function App() {
           )}
 
           {viewerRole === 'patient' && (
-            <section className="workspace-block">
-              <h3>Create Profile</h3>
-              <div className="profile-create-grid">
-                <label><span>Full Name</span><input value={profileForm.full_name} onChange={(e) => setProfileForm((p) => ({ ...p, full_name: e.target.value }))} /></label>
-                <label><span>Age</span><input type="number" value={profileForm.age} onChange={(e) => setProfileForm((p) => ({ ...p, age: e.target.value }))} /></label>
-                <label><span>Sex</span><select value={profileForm.sex} onChange={(e) => setProfileForm((p) => ({ ...p, sex: e.target.value }))}><option value="">Select</option><option value="0">Female</option><option value="1">Male</option></select></label>
-                <label><span>DOB</span><input type="date" value={profileForm.dob} onChange={(e) => setProfileForm((p) => ({ ...p, dob: e.target.value }))} /></label>
-                <label><span>Phone</span><input value={profileForm.phone} onChange={(e) => setProfileForm((p) => ({ ...p, phone: e.target.value }))} /></label>
-                <label><span>Email</span><input value={profileForm.email} onChange={(e) => setProfileForm((p) => ({ ...p, email: e.target.value }))} /></label>
-                <label><span>Blood Group</span><input value={profileForm.blood_group} onChange={(e) => setProfileForm((p) => ({ ...p, blood_group: e.target.value }))} /></label>
-                <label><span>Emergency Contact</span><input value={profileForm.emergency_contact} onChange={(e) => setProfileForm((p) => ({ ...p, emergency_contact: e.target.value }))} /></label>
-                <label><span>Address</span><input value={profileForm.address} onChange={(e) => setProfileForm((p) => ({ ...p, address: e.target.value }))} /></label>
-                <label><span>Allergies</span><input value={profileForm.allergies} onChange={(e) => setProfileForm((p) => ({ ...p, allergies: e.target.value }))} /></label>
-                <label><span>Conditions</span><input value={profileForm.existing_conditions} onChange={(e) => setProfileForm((p) => ({ ...p, existing_conditions: e.target.value }))} /></label>
-                <label><span>Notes</span><input value={profileForm.notes} onChange={(e) => setProfileForm((p) => ({ ...p, notes: e.target.value }))} /></label>
-              </div>
-
-              <button className="btn primary" onClick={createCompleteProfile} disabled={creatingProfile}>
-                {creatingProfile ? 'Creating...' : 'Create Complete Profile'}
-              </button>
-            </section>
-          )}
-
-          {viewerRole === 'patient' && (
-            <section className="workspace-block">
+            <section className="workspace-block profile-history-block">
               <h3>Profile Diagnosis History</h3>
               <div className="history-scroll">
                 {history.length === 0 && <p className="muted">No saved diagnoses for selected profile.</p>}
@@ -1882,7 +1822,11 @@ function App() {
             </section>
           )}
         </aside>
+      </section>
+      )}
 
+      {portalPage === 'diagnosis' && (
+      <section className="layout single-column">
         <section className="panel form-panel">
           <h2>{viewerRole === 'doctor' ? 'Clinical Input' : 'Patient Input'}</h2>
           {viewerRole === 'patient'
@@ -1963,8 +1907,11 @@ function App() {
 
         </section>
       </section>
+      )}
 
-      <section className="layout results-zone">
+      {(portalPage === 'diagnosis' || portalPage === 'assistant') && (
+      <section className={`layout ${portalPage === 'diagnosis' ? 'single-column' : ''} results-zone`}>
+        {portalPage === 'diagnosis' && (
         <section className="panel">
           <h2>Diagnosis Summary</h2>
           {viewerRole === 'patient' && selectedDoctorSummary && (
@@ -2163,7 +2110,9 @@ function App() {
             </>
           )}
         </section>
+        )}
 
+        {portalPage === 'assistant' && (
         <section className="panel">
           <h2>{viewerRole === 'doctor' ? 'Monitoring & Medical Assistant' : 'My Monitoring & Care Assistant'}</h2>
           <h3>ECG Signal</h3>
@@ -2384,7 +2333,11 @@ function App() {
             </>
           )}
         </section>
+        )}
       </section>
+      )}
+      </>
+      )}
     </main>
   )
 }

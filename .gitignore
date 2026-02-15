@@ -26,6 +26,7 @@ pnpm-debug.log*
 # Backend runtime artifacts
 backend/data/*.db
 backend/uploads/
+backend/backups/
 
 # Local generated models/artifacts
 models/*.pkl

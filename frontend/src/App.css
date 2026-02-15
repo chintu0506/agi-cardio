@@ -40,17 +40,15 @@
   display: flex;
   gap: 0.5rem;
 }
-
-.api-controls {
-  margin-top: 0.7rem;
-  display: grid;
-  grid-template-columns: minmax(240px, 420px) auto;
-  gap: 0.45rem;
+.page-switch {
+  margin-top: 0.6rem;
+  display: flex;
+  gap: 0.5rem;
 }
 
 .status-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
   gap: 0.6rem;
 }
 .doctor-mini-grid {
@@ -74,6 +72,9 @@
   display: grid;
   grid-template-columns: 360px 1fr;
   gap: 1rem;
+}
+.layout.single-column {
+  grid-template-columns: 1fr;
 }
 
 .results-zone { grid-template-columns: 1fr 1fr; }
@@ -130,6 +131,27 @@ textarea:focus {
 .profile-panel .actions .btn { min-width: 120px; }
 .profile-panel .profile-create-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .profile-panel .profile-create-grid label { min-width: 0; }
+.profile-panel { display: flex; flex-direction: column; }
+.profile-history-block { margin-top: auto; }
+.profile-panel .profile-history-block {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.profile-panel .profile-history-block .history-scroll {
+  flex: 1;
+  max-height: none;
+  min-height: 0;
+}
+
+.create-profile-page {
+  max-width: 1100px;
+  margin: 0 auto;
+  width: 100%;
+}
+.create-profile-page .profile-create-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
 
 
 .btn {
@@ -342,7 +364,6 @@ textarea:focus {
   .status-grid { grid-template-columns: 1fr; }
   .doctor-mini-grid { grid-template-columns: 1fr; }
   .topbar { flex-direction: column; align-items: flex-start; }
-  .api-controls { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 700px) {
