@@ -19,6 +19,8 @@ cp .env.production.example .env
 ```
 
 2. Fill real SMTP/OTP provider values in `.env`.
+   - For email OTP: set `SMTP_*`
+   - For mobile OTP: set optional `TWILIO_*` values
 
 ## Health and readiness
 

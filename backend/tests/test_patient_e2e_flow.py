@@ -53,10 +53,10 @@ class PatientE2EFlowTests(unittest.TestCase):
     def _auth_headers(self, token):
         return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
-    def _signup_verify_login(self, name, email, password, role):
+    def _signup_verify_login(self, name, email, mobile, password, role, login_value=None):
         initiate = self.client.post(
             "/api/auth/signup/initiate",
-            json={"name": name, "email": email, "password": password, "role": role},
+            json={"name": name, "email": email, "mobile": mobile, "password": password, "role": role},
         )
         self.assertEqual(initiate.status_code, 200, initiate.get_data(as_text=True))
         init_payload = initiate.get_json()
@@ -86,7 +86,7 @@ class PatientE2EFlowTests(unittest.TestCase):
 
         login = self.client.post(
             "/api/auth/login",
-            json={"login": email, "password": password},
+            json={"login": login_value or email or mobile, "password": password},
         )
         self.assertEqual(login.status_code, 200, login.get_data(as_text=True))
         login_payload = login.get_json()
@@ -97,6 +97,7 @@ class PatientE2EFlowTests(unittest.TestCase):
         login_payload = self._signup_verify_login(
             name="E2E Patient",
             email="patient.e2e@example.com",
+            mobile="",
             password="pass1234",
             role="patient",
         )
@@ -158,6 +159,23 @@ class PatientE2EFlowTests(unittest.TestCase):
 
         list_profiles = self.client.get("/api/profiles")
         self.assertEqual(list_profiles.status_code, 401)
+
+    def test_mobile_signup_and_mobile_login_workflow(self):
+        mobile = "917777666655"
+        login_payload = self._signup_verify_login(
+            name="Mobile Patient",
+            email="",
+            mobile=mobile,
+            password="pass1234",
+            role="patient",
+            login_value=mobile,
+        )
+        token = login_payload["token"]
+        me = self.client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(me.status_code, 200)
+        user = me.get_json()["user"]
+        self.assertEqual(user["role"], "patient")
+        self.assertTrue(str(user.get("mobile") or "").endswith("7777666655"))
 
 
 if __name__ == "__main__":

@@ -43,6 +43,7 @@ export default function AuthScreen({
               <div className="profile-create-grid">
                 <label><span>Full Name</span><input value={authForm.name} onChange={(e) => setAuthForm((p) => ({ ...p, name: e.target.value }))} /></label>
                 <label><span>Email</span><input value={authForm.email} onChange={(e) => setAuthForm((p) => ({ ...p, email: e.target.value }))} /></label>
+                <label><span>Mobile</span><input value={authForm.mobile} onChange={(e) => setAuthForm((p) => ({ ...p, mobile: e.target.value }))} placeholder="10-digit mobile" /></label>
                 <label><span>Password</span><input type="password" autoComplete="new-password" value={authForm.password} onChange={(e) => setAuthForm((p) => ({ ...p, password: e.target.value }))} /></label>
                 <label><span>Role</span>
                   <select value={authForm.role} onChange={(e) => setAuthForm((p) => ({ ...p, role: e.target.value }))}>
@@ -67,7 +68,7 @@ export default function AuthScreen({
           </>
         ) : (
           <>
-            <p className="muted">Enter OTP sent to your registered email. OTP valid for 5 minutes.</p>
+            <p className="muted">Enter OTP sent to your registered email/mobile. OTP valid for 5 minutes.</p>
             <div className="profile-create-grid">
               <label><span>OTP Code</span><input value={otpCode} onChange={(e) => setOtpCode(e.target.value)} placeholder="6-digit OTP" /></label>
             </div>

@@ -368,11 +368,16 @@ def install_auth_access_routes(app, get_db, cors, upload_dir):
         name = str(body.get("name", "")).strip()
         contact = _clean_optional_contact(body.get("contact"))
         email = _clean_optional_contact(body.get("email"))
-        if contact and not email:
+        mobile = _clean_optional_contact(body.get("mobile"))
+        if contact and not email and _looks_like_email(contact):
             email = contact
+        if contact and not mobile and not _looks_like_email(contact):
+            mobile = contact
         if email:
             email = email.lower()
-        mobile = None
+        mobile = _normalize_mobile(mobile)
+        if not mobile:
+            mobile = None
         password = str(body.get("password", ""))
         role = str(body.get("role", "")).strip().lower()
 
@@ -380,18 +385,21 @@ def install_auth_access_routes(app, get_db, cors, upload_dir):
             return cors({"error": "Role must be 'doctor' or 'patient'."}, 400)
         if not name:
             return cors({"error": "Name is required."}, 400)
-        if not email:
-            return cors({"error": "Provide email for signup OTP."}, 400)
-        if not _looks_like_email(email):
+        if not email and not mobile:
+            return cors({"error": "Provide email or mobile for signup OTP."}, 400)
+        if email and not _looks_like_email(email):
             return cors({"error": "Provide a valid email address for signup OTP."}, 400)
+        if mobile and len(mobile) < 10:
+            return cors({"error": "Provide a valid mobile number (at least 10 digits)."}, 400)
         if len(password) < 6:
             return cors({"error": "Password must be at least 6 characters."}, 400)
 
         conn = get_db()
         try:
-            if _user_exists_by_contact(conn, email=email, mobile=None):
-                return cors({"error": "Email already registered."}, 409)
-            target = email
+            if _user_exists_by_contact(conn, email=email, mobile=mobile):
+                return cors({"error": "Email or mobile already registered."}, 409)
+            target = email or mobile
+            use_email = bool(email)
             otp = _create_otp_record(
                 conn,
                 user_contact=target,
@@ -404,13 +412,18 @@ def install_auth_access_routes(app, get_db, cors, upload_dir):
                 role=role,
                 password_hash=generate_password_hash(password),
             )
-            delivery_info = _deliver_otp(email=email, mobile=None, otp_code=otp["otp_code"])
+            delivery_info = _deliver_otp(
+                email=email if use_email else None,
+                mobile=mobile if not use_email else None,
+                otp_code=otp["otp_code"],
+            )
             allow_preview = _truthy_env("OTP_ALLOW_PREVIEW", True)
             response = {
                 "message": f"OTP sent to {target}. Verify to complete signup.",
                 "otp_id": otp["otp_id"],
                 "expires_at": otp["expires_at"],
                 "delivery": delivery_info["delivery"],
+                "delivery_target": target,
                 "delivery_status": "sent" if delivery_info["delivered"] else "failed",
                 "delivery_note": delivery_info["note"],
             }

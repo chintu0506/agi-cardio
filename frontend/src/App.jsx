@@ -278,6 +278,7 @@ function App() {
   const [authForm, setAuthForm] = useState({
     name: '',
     email: '',
+    mobile: '',
     password: '',
     role: 'patient',
     login: '',
@@ -595,12 +596,14 @@ function App() {
     setError('')
     try {
       const email = authForm.email.trim()
-      if (!email) {
-        throw new Error('Enter email to sign up.')
+      const mobile = authForm.mobile.trim()
+      if (!email && !mobile) {
+        throw new Error('Enter email or mobile to sign up.')
       }
       const payload = {
         name: authForm.name.trim(),
         email,
+        mobile,
         password: authForm.password,
         role: authForm.role,
       }
