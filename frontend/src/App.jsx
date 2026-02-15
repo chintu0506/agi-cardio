@@ -217,6 +217,13 @@ function getEmergencyGuidance(result) {
   ]
 }
 
+function getSafetyStatusTitle(status) {
+  const normalized = String(status || '').toLowerCase()
+  if (normalized === 'blocked') return 'AI Safety Gate: Blocked'
+  if (normalized === 'caution') return 'AI Safety Gate: Provisional'
+  return 'AI Safety Gate: Standard'
+}
+
 function parseDoctorSummary(note) {
   const parts = String(note?.remarks || '')
     .split('|')
@@ -632,6 +639,26 @@ function App() {
       { label: 'BNP', value: Number.isFinite(bnp) ? `${bnp.toFixed(0)} pg/mL` : '--', tone: bnpTone },
     ]
   }, [result, form])
+  const safetyAssessment = useMemo(() => {
+    const safety = result?.safety_assessment
+    if (!safety || typeof safety !== 'object') return null
+    const status = String(safety.status || 'ok').toLowerCase()
+    const tone = status === 'blocked' ? 'blocked' : status === 'caution' ? 'caution' : 'ok'
+    return {
+      status,
+      tone,
+      title: getSafetyStatusTitle(status),
+      summary: String(safety.summary || ''),
+      reasons: Array.isArray(safety.reasons) ? safety.reasons : [],
+      confidenceScore: Number.isFinite(Number(safety.confidence_score)) ? Number(safety.confidence_score) : null,
+      boundaryDistance: Number.isFinite(Number(safety?.uncertainty?.boundary_distance_pct))
+        ? Number(safety.uncertainty.boundary_distance_pct)
+        : null,
+      oodCount: Number.isFinite(Number(safety?.uncertainty?.ood_feature_count))
+        ? Number(safety.uncertainty.ood_feature_count)
+        : null,
+    }
+  }, [result])
 
   const loadProfiles = useCallback(async (base, tokenOverride) => {
     const token = tokenOverride || authToken
@@ -1623,6 +1650,14 @@ function App() {
         setResult(null)
       } else {
         setResult(data)
+        const safetyStatus = String(data?.safety_assessment?.status || 'ok').toLowerCase()
+        if (safetyStatus === 'blocked') {
+          setSuccessMessage('AI safety gate blocked autonomous interpretation. Clinician confirmation is required.')
+        } else if (safetyStatus === 'caution') {
+          setSuccessMessage('Diagnosis marked provisional by AI safety gate. Please confirm clinically.')
+        } else {
+          setSuccessMessage('')
+        }
         setDiagnosisStage('diagnosis')
         setAssistantEcgSignal([])
         setAssistantEcgMeta({ hr: null, sampleRate: null, durationSec: null })
@@ -1923,6 +1958,18 @@ function App() {
     <p><b>Overall Risk:</b> ${Number(result.master_probability || 0).toFixed(1)}%</p>
     <p><b>Risk Tier:</b> ${escHtml(result?.risk_tier?.level || 'UNKNOWN')}</p>
     <p><b>Recommended Action:</b> ${escHtml(result?.risk_tier?.action || 'N/A')}</p>
+  </div>
+
+  <div class="card">
+    <h2>AI Safety Assessment</h2>
+    <p><b>Status:</b> ${escHtml(getSafetyStatusTitle(result?.safety_assessment?.status || 'ok'))}</p>
+    <p><b>Summary:</b> ${escHtml(result?.safety_assessment?.summary || 'Use as decision support, not as standalone diagnosis.')}</p>
+    <p><b>Clinician Review Required:</b> ${result?.requires_clinician_review ? 'Yes' : 'No'}</p>
+    ${
+      Array.isArray(result?.safety_assessment?.reasons) && result.safety_assessment.reasons.length > 0
+        ? `<ul>${result.safety_assessment.reasons.map((reason) => `<li>${escHtml(reason)}</li>`).join('')}</ul>`
+        : '<p>No additional uncertainty reasons flagged.</p>'
+    }
   </div>
 
   <div class="card">
@@ -2419,6 +2466,25 @@ function App() {
                 <div><span>Tier</span><h3>{result.risk_tier.level}</h3></div>
                 <div><span>Report ID</span><h3>{result.report_id}</h3></div>
               </div>
+              {safetyAssessment && (
+                <article className={`safety-banner ${safetyAssessment.tone}`}>
+                  <header>
+                    <strong>{safetyAssessment.title}</strong>
+                    <span>{result?.requires_clinician_review ? 'Clinician review required' : 'No hard safety block'}</span>
+                  </header>
+                  <p>{safetyAssessment.summary || 'Use this output only as decision support.'}</p>
+                  {safetyAssessment.reasons.length > 0 && (
+                    <ul className="list">
+                      {safetyAssessment.reasons.map((reason, idx) => <li key={`safety-reason-${idx}`}>{reason}</li>)}
+                    </ul>
+                  )}
+                  <p className="muted">
+                    Confidence score: {safetyAssessment.confidenceScore != null ? `${safetyAssessment.confidenceScore.toFixed(1)} / 100` : '--'}
+                    {' | '}Boundary distance: {safetyAssessment.boundaryDistance != null ? `${safetyAssessment.boundaryDistance.toFixed(1)}%` : '--'}
+                    {' | '}OOD features: {safetyAssessment.oodCount != null ? safetyAssessment.oodCount : '--'}
+                  </p>
+                </article>
+              )}
               <div className="clinical-metrics">
                 {metricCards.map((m) => (
                   <article key={m.label} className={`metric-card ${m.tone}`}>

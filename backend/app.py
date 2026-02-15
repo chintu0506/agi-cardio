@@ -1021,6 +1021,152 @@ def get_risk_tier(prob_pct):
         if prob_pct <= t['max']: return t
     return RISK_TIERS[-1]
 
+
+def _safer_div(num, den):
+    try:
+        return float(num) / float(den) if float(den) else 0.0
+    except Exception:
+        return 0.0
+
+
+def _safety_status_max(a, b):
+    rank = {'ok': 0, 'caution': 1, 'blocked': 2}
+    return a if rank.get(str(a), 0) >= rank.get(str(b), 0) else b
+
+
+def _input_ood_summary(patient_data):
+    base = {'max_abs_z': 0.0, 'ood_feature_count': 0, 'features': []}
+    scaler_master = MODEL_SCALERS.get('master') or scaler
+    if scaler_master is None:
+        return base
+    means = np.asarray(getattr(scaler_master, 'mean_', []), dtype=float)
+    scales = np.asarray(getattr(scaler_master, 'scale_', []), dtype=float)
+    if means.size != len(FEATURES) or scales.size != len(FEATURES):
+        return base
+    safe_scales = np.where(np.abs(scales) < 1e-9, 1.0, scales)
+    try:
+        row = np.asarray([float(patient_data.get(f, 0.0)) for f in FEATURES], dtype=float)
+    except Exception:
+        return base
+    z = np.abs((row - means) / safe_scales)
+    flagged = []
+    for idx, zval in enumerate(z):
+        zv = float(zval)
+        if zv < 3.5:
+            continue
+        f = FEATURES[idx]
+        flagged.append({
+            'feature': f,
+            'label': FEAT_INFO.get(f, {}).get('label', f),
+            'value': round(float(row[idx]), 3),
+            'abs_z': round(zv, 2),
+        })
+    flagged.sort(key=lambda x: x['abs_z'], reverse=True)
+    return {
+        'max_abs_z': round(float(z.max()) if z.size else 0.0, 2),
+        'ood_feature_count': len(flagged),
+        'features': flagged[:8],
+    }
+
+
+def assess_prediction_safety(patient_data, probs, raw_master_pct, calibrated_master_pct, clinical_severity_pct):
+    disease_scores = [(k, float(probs.get(k, 0.0))) for k in ['cad', 'hf', 'arr', 'mi']]
+    disease_scores.sort(key=lambda x: x[1], reverse=True)
+    top_id, top_prob = (disease_scores[0] if disease_scores else ('unknown', 0.0))
+    second_prob = disease_scores[1][1] if len(disease_scores) > 1 else 0.0
+    top_gap = round(max(0.0, float(top_prob - second_prob)), 1)
+
+    master_threshold_pct = float(get_model_threshold_pct('master'))
+    boundary_distance = round(abs(float(raw_master_pct) - master_threshold_pct), 1)
+    model_clinical_gap = round(abs(float(raw_master_pct) - float(clinical_severity_pct)), 1)
+    ood = _input_ood_summary(patient_data)
+
+    status = 'ok'
+    reasons = []
+    if ood['max_abs_z'] >= 5.0 or ood['ood_feature_count'] >= 4:
+        status = 'blocked'
+        reasons.append('Input pattern is far outside the model training distribution.')
+    elif ood['max_abs_z'] >= 4.0 or ood['ood_feature_count'] >= 2:
+        status = _safety_status_max(status, 'caution')
+        reasons.append('Input has outlier features relative to training distribution.')
+
+    if boundary_distance <= 3.0:
+        status = _safety_status_max(status, 'caution')
+        reasons.append('Master probability is very close to the decision threshold.')
+
+    if top_gap <= 6.0:
+        status = _safety_status_max(status, 'caution')
+        reasons.append('Top disease probabilities are close; differential remains uncertain.')
+
+    if model_clinical_gap >= 45.0:
+        status = 'blocked'
+        reasons.append('Large disagreement between model output and clinical severity estimate.')
+    elif model_clinical_gap >= 30.0:
+        status = _safety_status_max(status, 'caution')
+        reasons.append('Moderate disagreement between model output and clinical severity estimate.')
+
+    # Penalize confidence when uncertainty signals are high.
+    confidence = 98.0
+    confidence -= min(45.0, float(ood.get('max_abs_z', 0.0)) * 7.0)
+    confidence -= max(0.0, (8.0 - boundary_distance) * 3.0)
+    confidence -= max(0.0, (10.0 - top_gap) * 2.0)
+    confidence -= min(25.0, model_clinical_gap * 0.45)
+    confidence = round(max(2.0, min(99.0, confidence)), 1)
+
+    if status == 'blocked':
+        summary = (
+            "AI safety gate blocked autonomous interpretation. "
+            "Use this output only as preliminary support and obtain urgent clinician review."
+        )
+    elif status == 'caution':
+        summary = (
+            "AI output is provisional due to uncertainty signals. "
+            "Clinician review is required before treatment decisions."
+        )
+    else:
+        summary = (
+            "No major uncertainty flags detected for this input profile. "
+            "Still use as decision support, not as standalone diagnosis."
+        )
+
+    return {
+        'status': status,
+        'summary': summary,
+        'reasons': reasons,
+        'requires_clinician_review': status != 'ok',
+        'is_actionable_prediction': status == 'ok',
+        'confidence_score': confidence,
+        'primary_signal': {
+            'condition': top_id,
+            'probability': round(top_prob, 1),
+            'margin_vs_second': top_gap,
+        },
+        'uncertainty': {
+            'decision_threshold_pct': round(master_threshold_pct, 1),
+            'boundary_distance_pct': boundary_distance,
+            'model_clinical_gap_pct': model_clinical_gap,
+            'max_abs_z': float(ood['max_abs_z']),
+            'ood_feature_count': int(ood['ood_feature_count']),
+            'ood_features': ood['features'],
+        },
+    }
+
+
+def get_safety_recommendations(safety_assessment):
+    status = str((safety_assessment or {}).get('status', 'ok')).lower()
+    if status == 'blocked':
+        return [{
+            'priority': 'URGENT',
+            'text': '🛑 AI safety gate triggered — obtain urgent clinician review and confirm with ECG/lab/imaging before acting on this report.',
+        }]
+    if status == 'caution':
+        return [{
+            'priority': 'HIGH',
+            'text': '⚠️ Provisional AI output — confirm with clinician assessment and targeted tests before treatment decisions.',
+        }]
+    return []
+
+
 def _safe_float(v, default=0.0):
     try:
         if v in (None, ''):
@@ -2300,6 +2446,13 @@ def generate_diagnosis(data):
     raw_master_pct = probs['master']
     master_pct, clinical_severity_pct = calibrate_master_risk(raw_master_pct, data)
     tier = get_risk_tier(master_pct)
+    safety_assessment = assess_prediction_safety(
+        data,
+        probs,
+        raw_master_pct=raw_master_pct,
+        calibrated_master_pct=master_pct,
+        clinical_severity_pct=clinical_severity_pct,
+    )
 
     diseases = []
     for key in ['cad','hf','arr','mi']:
@@ -2348,8 +2501,15 @@ def generate_diagnosis(data):
         ),
         'weight': 'HIGH'
     })
+    reasoning.append({
+        'step': 10,
+        'category': 'Safety Gate',
+        'finding': safety_assessment.get('summary', ''),
+        'weight': 'CRITICAL' if safety_assessment.get('status') == 'blocked' else 'HIGH' if safety_assessment.get('status') == 'caution' else 'INFO',
+    })
     recs = get_recommendations(data, probs, tier, master_pct=master_pct)
     recs.extend(get_extended_recommendations(extended_probs))
+    recs.extend(get_safety_recommendations(safety_assessment))
     recs = _sanitize_recommendations(recs)
     flags = flag_abnormals(data)
     input_requirements = get_input_requirements(data)
@@ -2371,6 +2531,9 @@ def generate_diagnosis(data):
     master_threshold_pct = get_model_threshold_pct('master')
     return {
         'prediction': int(raw_master_pct >= master_threshold_pct),
+        'is_actionable_prediction': bool(safety_assessment.get('is_actionable_prediction', False)),
+        'requires_clinician_review': bool(safety_assessment.get('requires_clinician_review', True)),
+        'safety_assessment': safety_assessment,
         'master_probability': master_pct,
         'raw_model_probability': raw_master_pct,
         'clinical_severity_score': clinical_severity_pct,

@@ -80,6 +80,46 @@ class ClinicalOutputQualityTests(unittest.TestCase):
             disclaimer = str(d.get("confidence_disclaimer", "")).lower()
             self.assertIn("surrogate confidence", disclaimer)
 
+    def test_output_includes_safety_assessment_contract(self):
+        out = generate_diagnosis(dict(DEFAULT_PATIENT))
+        safety = out.get("safety_assessment", {})
+        self.assertIsInstance(safety, dict)
+        self.assertIn(str(safety.get("status", "")), ("ok", "caution", "blocked"))
+        self.assertIn("summary", safety)
+        self.assertIn("reasons", safety)
+        self.assertEqual(bool(out.get("requires_clinician_review")), str(safety.get("status")) != "ok")
+        self.assertEqual(bool(out.get("is_actionable_prediction")), str(safety.get("status")) == "ok")
+
+    def test_extreme_profile_triggers_review_gate(self):
+        extreme = {
+            "age": 80,
+            "sex": 1,
+            "cp": 3,
+            "trestbps": 200,
+            "chol": 580,
+            "fbs": 1,
+            "restecg": 2,
+            "thalach": 60,
+            "exang": 1,
+            "oldpeak": 7.0,
+            "slope": 2,
+            "ca": 3,
+            "thal": 3,
+            "bmi": 50.0,
+            "smoking": 1,
+            "diabetes": 1,
+            "family_history": 1,
+            "creatinine": 5.0,
+            "bnp": 2000,
+            "troponin": 4.0,
+            "ejection_fraction": 15,
+        }
+        out = generate_diagnosis(extreme)
+        safety = out.get("safety_assessment", {})
+        self.assertIn(str(safety.get("status", "")), ("blocked", "caution"))
+        self.assertTrue(out.get("requires_clinician_review"))
+        self.assertFalse(out.get("is_actionable_prediction"))
+
 
 if __name__ == "__main__":
     unittest.main()

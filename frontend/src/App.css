@@ -406,6 +406,40 @@ textarea:focus {
 .risk-moderate { background: #fff2dd; }
 .risk-high { background: #ffe7d2; }
 .risk-critical { background: #ffe1e6; }
+.safety-banner {
+  margin-top: 0.7rem;
+  border: 1px solid #c7d6ea;
+  border-radius: 12px;
+  padding: 0.7rem 0.8rem;
+  background: #f6fbff;
+  display: grid;
+  gap: 0.4rem;
+}
+.safety-banner header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+}
+.safety-banner header span {
+  font-size: 0.78rem;
+  color: #2f4968;
+}
+.safety-banner p {
+  margin: 0;
+}
+.safety-banner.ok {
+  border-color: #b8d5c7;
+  background: #eefaf5;
+}
+.safety-banner.caution {
+  border-color: #e5c78f;
+  background: #fff7eb;
+}
+.safety-banner.blocked {
+  border-color: #efb5b5;
+  background: #fff1f1;
+}
 .clinical-metrics {
   margin-top: 0.9rem;
   display: grid;

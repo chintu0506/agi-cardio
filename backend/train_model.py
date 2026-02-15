@@ -424,17 +424,75 @@ def train_tuned_xgboost(X_tr, y_tr):
     return grid.best_estimator_, float(grid.best_score_)
 
 
-def select_threshold(y_true, y_prob):
-    thresholds = np.linspace(0.2, 0.8, 61)
-    best_t = 0.5
-    best_acc = -1.0
-    for t in thresholds:
-        pred = (y_prob >= t).astype(int)
-        acc = accuracy_score(y_true, pred)
-        if acc > best_acc:
-            best_acc = acc
-            best_t = float(t)
-    return best_t, float(best_acc)
+def _safe_div(num, den):
+    return float(num / den) if den else 0.0
+
+
+def expected_calibration_error(y_true, y_prob, n_bins=15):
+    y_true_arr = np.asarray(y_true).astype(int)
+    y_prob_arr = np.asarray(y_prob, dtype=float)
+    if len(y_prob_arr) == 0:
+        return 0.0
+    bins = np.linspace(0.0, 1.0, n_bins + 1)
+    bin_ids = np.digitize(y_prob_arr, bins[1:-1], right=False)
+    ece = 0.0
+    total = float(len(y_prob_arr))
+    for b in range(n_bins):
+        mask = (bin_ids == b)
+        if not np.any(mask):
+            continue
+        frac = float(mask.sum()) / total
+        mean_conf = float(y_prob_arr[mask].mean())
+        frac_pos = float(y_true_arr[mask].mean())
+        ece += abs(mean_conf - frac_pos) * frac
+    return float(ece)
+
+
+def threshold_metrics(y_true, y_prob, threshold):
+    y_true_arr = np.asarray(y_true).astype(int)
+    y_prob_arr = np.asarray(y_prob, dtype=float)
+    pred = (y_prob_arr >= float(threshold)).astype(int)
+    cm = confusion_matrix(y_true_arr, pred, labels=[0, 1])
+    tn, fp, fn, tp = [int(x) for x in cm.ravel()]
+    recall = _safe_div(tp, tp + fn)
+    specificity = _safe_div(tn, tn + fp)
+    precision = _safe_div(tp, tp + fp)
+    accuracy = _safe_div(tp + tn, tp + tn + fp + fn)
+    f2 = _safe_div(5.0 * precision * recall, (4.0 * precision) + recall)
+    return {
+        'threshold': float(threshold),
+        'accuracy': accuracy,
+        'recall': recall,
+        'specificity': specificity,
+        'precision': precision,
+        'f2': f2,
+        'tn': tn,
+        'fp': fp,
+        'fn': fn,
+        'tp': tp,
+    }
+
+
+def clinical_threshold_policy(model_name):
+    key = str(model_name).strip().lower()
+    if key == 'master':
+        return {'target_recall': 0.92, 'min_specificity': 0.55}
+    if key in ('cad', 'mi'):
+        return {'target_recall': 0.90, 'min_specificity': 0.50}
+    return {'target_recall': 0.88, 'min_specificity': 0.48}
+
+
+def select_threshold(y_true, y_prob, target_recall=0.90, min_specificity=0.50):
+    thresholds = np.linspace(0.05, 0.95, 181)
+    stats = [threshold_metrics(y_true, y_prob, t) for t in thresholds]
+    meets_spec = [s for s in stats if s['specificity'] >= float(min_specificity)]
+    meets_target = [s for s in meets_spec if s['recall'] >= float(target_recall)]
+
+    if meets_target:
+        return max(meets_target, key=lambda s: (s['f2'], s['recall'], s['specificity']))
+    if meets_spec:
+        return max(meets_spec, key=lambda s: (s['recall'], s['f2'], s['specificity']))
+    return max(stats, key=lambda s: (s['recall'], s['f2'], s['specificity']))
 
 
 def risk_tier_label(prob_pct):
@@ -454,6 +512,7 @@ def build_eval_metrics(y_true, y_prob, y_pred):
     cm = confusion_matrix(y_true_arr, y_pred_arr, labels=[0, 1])
     auc = roc_auc_score(y_true_arr, y_prob_arr) if len(np.unique(y_true_arr)) > 1 else 0.5
     ap = average_precision_score(y_true_arr, y_prob_arr) if len(np.unique(y_true_arr)) > 1 else 0.0
+    ece = expected_calibration_error(y_true_arr, y_prob_arr)
     frac_pos, mean_pred = calibration_curve(y_true_arr, y_prob_arr, n_bins=10, strategy='quantile')
     cal_bins = [
         {'mean_predicted': round(float(mp), 4), 'fraction_positive': round(float(fp), 4)}
@@ -465,6 +524,7 @@ def build_eval_metrics(y_true, y_prob, y_pred):
         'pr_auc': round(float(ap), 4),
         'brier': round(float(brier_score_loss(y_true_arr, y_prob_arr)), 4),
         'log_loss': round(float(log_loss(y_true_arr, np.clip(y_prob_arr, 1e-6, 1 - 1e-6))), 4),
+        'ece': round(float(ece), 4),
         'confusion_matrix': {
             'tn': int(cm[0, 0]),
             'fp': int(cm[0, 1]),
@@ -530,6 +590,7 @@ def train_disease_model(X_tr, X_te, y_tr, y_te, name):
     best_label, best_model, best_cv_auc = scored[0]
 
     # Select calibration strategy + threshold on validation split only.
+    threshold_policy = clinical_threshold_policy(name)
     evaluated = []
     for method in ['none', 'sigmoid', 'isotonic']:
         if method == 'none':
@@ -540,15 +601,40 @@ def train_disease_model(X_tr, X_te, y_tr, y_te, name):
             mdl.fit(X_fit, y_fit)
 
         val_prob = mdl.predict_proba(X_val)[:, 1]
-        threshold, val_acc = select_threshold(y_val, val_prob)
+        th_metrics = select_threshold(
+            y_val,
+            val_prob,
+            target_recall=threshold_policy['target_recall'],
+            min_specificity=threshold_policy['min_specificity'],
+        )
+        threshold = float(th_metrics['threshold'])
         val_pred = (val_prob >= threshold).astype(int)
         val_auc = roc_auc_score(y_val, val_prob) if len(np.unique(y_val)) > 1 else 0.5
         val_brier = brier_score_loss(y_val, val_prob)
         val_ll = log_loss(y_val, np.clip(val_prob, 1e-6, 1 - 1e-6))
-        evaluated.append((method, threshold, val_acc, val_auc, val_brier, val_ll))
+        val_ece = expected_calibration_error(y_val, val_prob)
+        evaluated.append({
+            'method': method,
+            'threshold': threshold,
+            'th_metrics': th_metrics,
+            'val_auc': val_auc,
+            'val_brier': val_brier,
+            'val_ll': val_ll,
+            'val_ece': val_ece,
+        })
 
-    evaluated.sort(key=lambda x: (x[2], x[3], -x[4]), reverse=True)
-    calibration_method, best_threshold, val_acc, val_auc, val_brier, val_ll = evaluated[0]
+    # Choose calibrator by calibration quality first; preserve discrimination as tie-breakers.
+    evaluated.sort(key=lambda x: (x['val_brier'], x['val_ll'], x['val_ece'], -x['val_auc'], -x['th_metrics']['f2']))
+    selected = evaluated[0]
+    calibration_method = selected['method']
+    best_threshold = float(selected['threshold'])
+    val_auc = float(selected['val_auc'])
+    val_brier = float(selected['val_brier'])
+    val_ll = float(selected['val_ll'])
+    val_ece = float(selected['val_ece'])
+    val_recall = float(selected['th_metrics']['recall'])
+    val_specificity = float(selected['th_metrics']['specificity'])
+    val_precision = float(selected['th_metrics']['precision'])
 
     # Refit selected strategy on full training split; evaluate once on untouched test split.
     if calibration_method == 'none':
@@ -566,15 +652,17 @@ def train_disease_model(X_tr, X_te, y_tr, y_te, name):
     auc = roc_auc_score(y_te, final_prob) if len(np.unique(y_te)) > 1 else 0.5
     brier = brier_score_loss(y_te, final_prob)
     ll = log_loss(y_te, np.clip(final_prob, 1e-6, 1 - 1e-6))
+    test_ece = expected_calibration_error(y_te, final_prob)
     print(
         f"   {name:<30} model={best_label:<12} th={best_threshold:.2f} "
         f"cal={calibration_method:<8} brier={brier:.4f} "
-        f"val_acc={val_acc*100:.1f}% cv_auc={best_cv_auc:.3f} "
+        f"val_rec={val_recall*100:.1f}% val_spec={val_specificity*100:.1f}% "
+        f"val_prec={val_precision*100:.1f}% val_ece={val_ece:.4f} cv_auc={best_cv_auc:.3f} "
         f"acc={acc*100:.1f}% auc={auc:.3f}"
     )
     return (
         final_model, acc, auc, best_label, best_cv_auc, best_threshold, train_acc,
-        calibration_method, brier, ll, y_te, final_prob, final_pred
+        calibration_method, brier, ll, test_ece, y_te, final_prob, final_pred
     )
 
 def compute_shap_importance(model, X_sample):
@@ -660,7 +748,7 @@ def train():
         X_te_s = pd.DataFrame(scaler.transform(X_te), columns=FEATURE_COLS)
         (
             clf, acc, auc, model_name, cv_auc, threshold, train_acc,
-            calibration_method, brier, ll, y_te_out, prob_out, pred_out
+            calibration_method, brier, ll, ece, y_te_out, prob_out, pred_out
         ) = train_disease_model(X_tr_s, X_te_s, y_tr, y_te, key)
         joblib.dump(clf, f'models/{key}_model.pkl')
         joblib.dump(scaler, f'models/{key}_scaler.pkl')
@@ -673,6 +761,7 @@ def train():
             'calibration': calibration_method,
             'brier': round(float(brier), 4),
             'log_loss': round(float(ll), 4),
+            'ece': round(float(ece), 4),
             'threshold': round(float(threshold), 3),
         }
         eval_report['models'][key] = build_eval_metrics(y_te_out, prob_out, pred_out)
