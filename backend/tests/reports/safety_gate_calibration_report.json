@@ -1,0 +1,1812 @@
+{
+  "generated_at": "2026-02-16T05:23:10.298168+00:00",
+  "master_threshold_pct": 17.0,
+  "summary": {
+    "total_cases": 24,
+    "passed_cases": 24,
+    "failed_cases": 0,
+    "pass_rate_pct": 100.0
+  },
+  "categories": {
+    "baseline": {
+      "total": 10,
+      "passed": 10,
+      "failed": 0,
+      "pass_rate_pct": 100.0
+    },
+    "mild_risk": {
+      "total": 6,
+      "passed": 6,
+      "failed": 0,
+      "pass_rate_pct": 100.0
+    },
+    "true_abnormal": {
+      "total": 8,
+      "passed": 8,
+      "failed": 0,
+      "pass_rate_pct": 100.0
+    }
+  },
+  "cases": [
+    {
+      "id": "baseline_01",
+      "category": "baseline",
+      "description": "Low-risk in-distribution baseline with normal biomarkers.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "ok",
+          "expected": [
+            "ok"
+          ]
+        },
+        {
+          "name": "confidence_min",
+          "passed": true,
+          "actual": 89.7,
+          "expected": 70.0
+        },
+        {
+          "name": "boundary_min",
+          "passed": true,
+          "actual": 17.0,
+          "expected": 15.0
+        },
+        {
+          "name": "risk_max",
+          "passed": true,
+          "actual": 4.6,
+          "expected": 25.0
+        },
+        {
+          "name": "ood_max",
+          "passed": true,
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_risk_over_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_confidence_below_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        }
+      ],
+      "metrics": {
+        "risk": 4.6,
+        "raw_model_probability": 0.0,
+        "clinical_severity_score": 12.0,
+        "status": "ok",
+        "gate_label": "Clear",
+        "confidence_score": 89.7,
+        "boundary_distance_pct": 17.0,
+        "ood_feature_count": 0,
+        "requires_clinician_review": false,
+        "trigger_flags": {
+          "risk_over_40": false,
+          "biomarkers_abnormal": false,
+          "confidence_below_40": false
+        }
+      }
+    },
+    {
+      "id": "baseline_02",
+      "category": "baseline",
+      "description": "Healthy baseline with normal structural and biomarker profile.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "ok",
+          "expected": [
+            "ok"
+          ]
+        },
+        {
+          "name": "confidence_min",
+          "passed": true,
+          "actual": 91.2,
+          "expected": 70.0
+        },
+        {
+          "name": "boundary_min",
+          "passed": true,
+          "actual": 17.0,
+          "expected": 15.0
+        },
+        {
+          "name": "risk_max",
+          "passed": true,
+          "actual": 4.6,
+          "expected": 25.0
+        },
+        {
+          "name": "ood_max",
+          "passed": true,
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_risk_over_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_confidence_below_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        }
+      ],
+      "metrics": {
+        "risk": 4.6,
+        "raw_model_probability": 0.0,
+        "clinical_severity_score": 12.0,
+        "status": "ok",
+        "gate_label": "Clear",
+        "confidence_score": 91.2,
+        "boundary_distance_pct": 17.0,
+        "ood_feature_count": 0,
+        "requires_clinician_review": false,
+        "trigger_flags": {
+          "risk_over_40": false,
+          "biomarkers_abnormal": false,
+          "confidence_below_40": false
+        }
+      }
+    },
+    {
+      "id": "baseline_03",
+      "category": "baseline",
+      "description": "Older baseline but still biomarker-normal and clear gate expected.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "ok",
+          "expected": [
+            "ok"
+          ]
+        },
+        {
+          "name": "confidence_min",
+          "passed": true,
+          "actual": 91.6,
+          "expected": 70.0
+        },
+        {
+          "name": "boundary_min",
+          "passed": true,
+          "actual": 17.0,
+          "expected": 15.0
+        },
+        {
+          "name": "risk_max",
+          "passed": true,
+          "actual": 8.7,
+          "expected": 25.0
+        },
+        {
+          "name": "ood_max",
+          "passed": true,
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_risk_over_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_confidence_below_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        }
+      ],
+      "metrics": {
+        "risk": 8.7,
+        "raw_model_probability": 0.0,
+        "clinical_severity_score": 23.0,
+        "status": "ok",
+        "gate_label": "Clear",
+        "confidence_score": 91.6,
+        "boundary_distance_pct": 17.0,
+        "ood_feature_count": 0,
+        "requires_clinician_review": false,
+        "trigger_flags": {
+          "risk_over_40": false,
+          "biomarkers_abnormal": false,
+          "confidence_below_40": false
+        }
+      }
+    },
+    {
+      "id": "baseline_04",
+      "category": "baseline",
+      "description": "Mild vessel history but preserved normal biomarker profile.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "ok",
+          "expected": [
+            "ok"
+          ]
+        },
+        {
+          "name": "confidence_min",
+          "passed": true,
+          "actual": 90.8,
+          "expected": 70.0
+        },
+        {
+          "name": "boundary_min",
+          "passed": true,
+          "actual": 15.1,
+          "expected": 15.0
+        },
+        {
+          "name": "risk_max",
+          "passed": true,
+          "actual": 8.0,
+          "expected": 25.0
+        },
+        {
+          "name": "ood_max",
+          "passed": true,
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_risk_over_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_confidence_below_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        }
+      ],
+      "metrics": {
+        "risk": 8.0,
+        "raw_model_probability": 1.9,
+        "clinical_severity_score": 18.0,
+        "status": "ok",
+        "gate_label": "Clear",
+        "confidence_score": 90.8,
+        "boundary_distance_pct": 15.1,
+        "ood_feature_count": 0,
+        "requires_clinician_review": false,
+        "trigger_flags": {
+          "risk_over_40": false,
+          "biomarkers_abnormal": false,
+          "confidence_below_40": false
+        }
+      }
+    },
+    {
+      "id": "baseline_05",
+      "category": "baseline",
+      "description": "Younger baseline with family history and diabetes but normal stress markers.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "ok",
+          "expected": [
+            "ok"
+          ]
+        },
+        {
+          "name": "confidence_min",
+          "passed": true,
+          "actual": 91.1,
+          "expected": 70.0
+        },
+        {
+          "name": "boundary_min",
+          "passed": true,
+          "actual": 17.0,
+          "expected": 15.0
+        },
+        {
+          "name": "risk_max",
+          "passed": true,
+          "actual": 4.9,
+          "expected": 25.0
+        },
+        {
+          "name": "ood_max",
+          "passed": true,
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_risk_over_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_confidence_below_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        }
+      ],
+      "metrics": {
+        "risk": 4.9,
+        "raw_model_probability": 0.0,
+        "clinical_severity_score": 13.0,
+        "status": "ok",
+        "gate_label": "Clear",
+        "confidence_score": 91.1,
+        "boundary_distance_pct": 17.0,
+        "ood_feature_count": 0,
+        "requires_clinician_review": false,
+        "trigger_flags": {
+          "risk_over_40": false,
+          "biomarkers_abnormal": false,
+          "confidence_below_40": false
+        }
+      }
+    },
+    {
+      "id": "baseline_06",
+      "category": "baseline",
+      "description": "Borderline lifestyle factors but no biomarker trigger.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "ok",
+          "expected": [
+            "ok"
+          ]
+        },
+        {
+          "name": "confidence_min",
+          "passed": true,
+          "actual": 92.1,
+          "expected": 70.0
+        },
+        {
+          "name": "boundary_min",
+          "passed": true,
+          "actual": 15.1,
+          "expected": 15.0
+        },
+        {
+          "name": "risk_max",
+          "passed": true,
+          "actual": 8.8,
+          "expected": 25.0
+        },
+        {
+          "name": "ood_max",
+          "passed": true,
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_risk_over_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_confidence_below_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        }
+      ],
+      "metrics": {
+        "risk": 8.8,
+        "raw_model_probability": 1.9,
+        "clinical_severity_score": 20.0,
+        "status": "ok",
+        "gate_label": "Clear",
+        "confidence_score": 92.1,
+        "boundary_distance_pct": 15.1,
+        "ood_feature_count": 0,
+        "requires_clinician_review": false,
+        "trigger_flags": {
+          "risk_over_40": false,
+          "biomarkers_abnormal": false,
+          "confidence_below_40": false
+        }
+      }
+    },
+    {
+      "id": "baseline_07",
+      "category": "baseline",
+      "description": "Low-noise baseline with normal EF/Troponin/BNP.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "ok",
+          "expected": [
+            "ok"
+          ]
+        },
+        {
+          "name": "confidence_min",
+          "passed": true,
+          "actual": 90.8,
+          "expected": 70.0
+        },
+        {
+          "name": "boundary_min",
+          "passed": true,
+          "actual": 17.0,
+          "expected": 15.0
+        },
+        {
+          "name": "risk_max",
+          "passed": true,
+          "actual": 6.1,
+          "expected": 25.0
+        },
+        {
+          "name": "ood_max",
+          "passed": true,
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_risk_over_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_confidence_below_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        }
+      ],
+      "metrics": {
+        "risk": 6.1,
+        "raw_model_probability": 0.0,
+        "clinical_severity_score": 16.0,
+        "status": "ok",
+        "gate_label": "Clear",
+        "confidence_score": 90.8,
+        "boundary_distance_pct": 17.0,
+        "ood_feature_count": 0,
+        "requires_clinician_review": false,
+        "trigger_flags": {
+          "risk_over_40": false,
+          "biomarkers_abnormal": false,
+          "confidence_below_40": false
+        }
+      }
+    },
+    {
+      "id": "baseline_08",
+      "category": "baseline",
+      "description": "Near-threshold BNP/troponin but still normal, should remain clear.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "ok",
+          "expected": [
+            "ok"
+          ]
+        },
+        {
+          "name": "confidence_min",
+          "passed": true,
+          "actual": 93.2,
+          "expected": 70.0
+        },
+        {
+          "name": "boundary_min",
+          "passed": true,
+          "actual": 17.0,
+          "expected": 15.0
+        },
+        {
+          "name": "risk_max",
+          "passed": true,
+          "actual": 3.0,
+          "expected": 25.0
+        },
+        {
+          "name": "ood_max",
+          "passed": true,
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_risk_over_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_confidence_below_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        }
+      ],
+      "metrics": {
+        "risk": 3.0,
+        "raw_model_probability": 0.0,
+        "clinical_severity_score": 8.0,
+        "status": "ok",
+        "gate_label": "Clear",
+        "confidence_score": 93.2,
+        "boundary_distance_pct": 17.0,
+        "ood_feature_count": 0,
+        "requires_clinician_review": false,
+        "trigger_flags": {
+          "risk_over_40": false,
+          "biomarkers_abnormal": false,
+          "confidence_below_40": false
+        }
+      }
+    },
+    {
+      "id": "baseline_09",
+      "category": "baseline",
+      "description": "Low-risk profile with preserved function and normal biomarkers.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "ok",
+          "expected": [
+            "ok"
+          ]
+        },
+        {
+          "name": "confidence_min",
+          "passed": true,
+          "actual": 92.1,
+          "expected": 70.0
+        },
+        {
+          "name": "boundary_min",
+          "passed": true,
+          "actual": 17.0,
+          "expected": 15.0
+        },
+        {
+          "name": "risk_max",
+          "passed": true,
+          "actual": 1.5,
+          "expected": 25.0
+        },
+        {
+          "name": "ood_max",
+          "passed": true,
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_risk_over_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_confidence_below_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        }
+      ],
+      "metrics": {
+        "risk": 1.5,
+        "raw_model_probability": 0.0,
+        "clinical_severity_score": 4.0,
+        "status": "ok",
+        "gate_label": "Clear",
+        "confidence_score": 92.1,
+        "boundary_distance_pct": 17.0,
+        "ood_feature_count": 0,
+        "requires_clinician_review": false,
+        "trigger_flags": {
+          "risk_over_40": false,
+          "biomarkers_abnormal": false,
+          "confidence_below_40": false
+        }
+      }
+    },
+    {
+      "id": "baseline_10",
+      "category": "baseline",
+      "description": "Average baseline where gate should be clear and confident.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "ok",
+          "expected": [
+            "ok"
+          ]
+        },
+        {
+          "name": "confidence_min",
+          "passed": true,
+          "actual": 93.3,
+          "expected": 70.0
+        },
+        {
+          "name": "boundary_min",
+          "passed": true,
+          "actual": 17.0,
+          "expected": 15.0
+        },
+        {
+          "name": "risk_max",
+          "passed": true,
+          "actual": 2.7,
+          "expected": 25.0
+        },
+        {
+          "name": "ood_max",
+          "passed": true,
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_risk_over_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_confidence_below_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        }
+      ],
+      "metrics": {
+        "risk": 2.7,
+        "raw_model_probability": 0.0,
+        "clinical_severity_score": 7.0,
+        "status": "ok",
+        "gate_label": "Clear",
+        "confidence_score": 93.3,
+        "boundary_distance_pct": 17.0,
+        "ood_feature_count": 0,
+        "requires_clinician_review": false,
+        "trigger_flags": {
+          "risk_over_40": false,
+          "biomarkers_abnormal": false,
+          "confidence_below_40": false
+        }
+      }
+    },
+    {
+      "id": "mild_01",
+      "category": "mild_risk",
+      "description": "Mild-risk, normal biomarkers, should remain actionable.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "ok",
+          "expected": [
+            "ok"
+          ]
+        },
+        {
+          "name": "confidence_min",
+          "passed": true,
+          "actual": 88.9,
+          "expected": 70.0
+        },
+        {
+          "name": "boundary_min",
+          "passed": true,
+          "actual": 8.3,
+          "expected": 5.0
+        },
+        {
+          "name": "risk_min",
+          "passed": true,
+          "actual": 25.2,
+          "expected": 25.0
+        },
+        {
+          "name": "risk_max",
+          "passed": true,
+          "actual": 25.2,
+          "expected": 40.0
+        },
+        {
+          "name": "ood_max",
+          "passed": true,
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_risk_over_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_confidence_below_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        }
+      ],
+      "metrics": {
+        "risk": 25.2,
+        "raw_model_probability": 25.3,
+        "clinical_severity_score": 25.0,
+        "status": "ok",
+        "gate_label": "Clear",
+        "confidence_score": 88.9,
+        "boundary_distance_pct": 8.3,
+        "ood_feature_count": 0,
+        "requires_clinician_review": false,
+        "trigger_flags": {
+          "risk_over_40": false,
+          "biomarkers_abnormal": false,
+          "confidence_below_40": false
+        }
+      }
+    },
+    {
+      "id": "mild_02",
+      "category": "mild_risk",
+      "description": "Mild-risk profile with vessel history but no abnormal biomarker.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "ok",
+          "expected": [
+            "ok"
+          ]
+        },
+        {
+          "name": "confidence_min",
+          "passed": true,
+          "actual": 85.2,
+          "expected": 70.0
+        },
+        {
+          "name": "boundary_min",
+          "passed": true,
+          "actual": 11.0,
+          "expected": 5.0
+        },
+        {
+          "name": "risk_min",
+          "passed": true,
+          "actual": 25.7,
+          "expected": 25.0
+        },
+        {
+          "name": "risk_max",
+          "passed": true,
+          "actual": 25.7,
+          "expected": 40.0
+        },
+        {
+          "name": "ood_max",
+          "passed": true,
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_risk_over_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_confidence_below_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        }
+      ],
+      "metrics": {
+        "risk": 25.7,
+        "raw_model_probability": 28.0,
+        "clinical_severity_score": 22.0,
+        "status": "ok",
+        "gate_label": "Clear",
+        "confidence_score": 85.2,
+        "boundary_distance_pct": 11.0,
+        "ood_feature_count": 0,
+        "requires_clinician_review": false,
+        "trigger_flags": {
+          "risk_over_40": false,
+          "biomarkers_abnormal": false,
+          "confidence_below_40": false
+        }
+      }
+    },
+    {
+      "id": "mild_03",
+      "category": "mild_risk",
+      "description": "Mild-risk with asymptomatic chest-pain class and normal stress markers.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "ok",
+          "expected": [
+            "ok"
+          ]
+        },
+        {
+          "name": "confidence_min",
+          "passed": true,
+          "actual": 84.3,
+          "expected": 70.0
+        },
+        {
+          "name": "boundary_min",
+          "passed": true,
+          "actual": 13.0,
+          "expected": 5.0
+        },
+        {
+          "name": "risk_min",
+          "passed": true,
+          "actual": 26.6,
+          "expected": 25.0
+        },
+        {
+          "name": "risk_max",
+          "passed": true,
+          "actual": 26.6,
+          "expected": 40.0
+        },
+        {
+          "name": "ood_max",
+          "passed": true,
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_risk_over_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_confidence_below_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        }
+      ],
+      "metrics": {
+        "risk": 26.6,
+        "raw_model_probability": 30.0,
+        "clinical_severity_score": 21.0,
+        "status": "ok",
+        "gate_label": "Clear",
+        "confidence_score": 84.3,
+        "boundary_distance_pct": 13.0,
+        "ood_feature_count": 0,
+        "requires_clinician_review": false,
+        "trigger_flags": {
+          "risk_over_40": false,
+          "biomarkers_abnormal": false,
+          "confidence_below_40": false
+        }
+      }
+    },
+    {
+      "id": "mild_04",
+      "category": "mild_risk",
+      "description": "Mild-risk with higher cholesterol and BP but no biomarker trigger.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "ok",
+          "expected": [
+            "ok"
+          ]
+        },
+        {
+          "name": "confidence_min",
+          "passed": true,
+          "actual": 84.1,
+          "expected": 70.0
+        },
+        {
+          "name": "boundary_min",
+          "passed": true,
+          "actual": 7.2,
+          "expected": 5.0
+        },
+        {
+          "name": "risk_min",
+          "passed": true,
+          "actual": 27.2,
+          "expected": 25.0
+        },
+        {
+          "name": "risk_max",
+          "passed": true,
+          "actual": 27.2,
+          "expected": 40.0
+        },
+        {
+          "name": "ood_max",
+          "passed": true,
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_risk_over_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_confidence_below_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        }
+      ],
+      "metrics": {
+        "risk": 27.2,
+        "raw_model_probability": 24.2,
+        "clinical_severity_score": 32.0,
+        "status": "ok",
+        "gate_label": "Clear",
+        "confidence_score": 84.1,
+        "boundary_distance_pct": 7.2,
+        "ood_feature_count": 0,
+        "requires_clinician_review": false,
+        "trigger_flags": {
+          "risk_over_40": false,
+          "biomarkers_abnormal": false,
+          "confidence_below_40": false
+        }
+      }
+    },
+    {
+      "id": "mild_05",
+      "category": "mild_risk",
+      "description": "Moderate symptom burden but normal objective biomarker profile.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "ok",
+          "expected": [
+            "ok"
+          ]
+        },
+        {
+          "name": "confidence_min",
+          "passed": true,
+          "actual": 83.5,
+          "expected": 70.0
+        },
+        {
+          "name": "boundary_min",
+          "passed": true,
+          "actual": 15.8,
+          "expected": 5.0
+        },
+        {
+          "name": "risk_min",
+          "passed": true,
+          "actual": 28.3,
+          "expected": 25.0
+        },
+        {
+          "name": "risk_max",
+          "passed": true,
+          "actual": 28.3,
+          "expected": 40.0
+        },
+        {
+          "name": "ood_max",
+          "passed": true,
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_risk_over_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_confidence_below_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        }
+      ],
+      "metrics": {
+        "risk": 28.3,
+        "raw_model_probability": 32.8,
+        "clinical_severity_score": 21.0,
+        "status": "ok",
+        "gate_label": "Clear",
+        "confidence_score": 83.5,
+        "boundary_distance_pct": 15.8,
+        "ood_feature_count": 0,
+        "requires_clinician_review": false,
+        "trigger_flags": {
+          "risk_over_40": false,
+          "biomarkers_abnormal": false,
+          "confidence_below_40": false
+        }
+      }
+    },
+    {
+      "id": "mild_06",
+      "category": "mild_risk",
+      "description": "Upper-mild risk band with still-normal biomarkers.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "ok",
+          "expected": [
+            "ok"
+          ]
+        },
+        {
+          "name": "confidence_min",
+          "passed": true,
+          "actual": 85.5,
+          "expected": 70.0
+        },
+        {
+          "name": "boundary_min",
+          "passed": true,
+          "actual": 19.9,
+          "expected": 5.0
+        },
+        {
+          "name": "risk_min",
+          "passed": true,
+          "actual": 35.0,
+          "expected": 25.0
+        },
+        {
+          "name": "risk_max",
+          "passed": true,
+          "actual": 35.0,
+          "expected": 40.0
+        },
+        {
+          "name": "ood_max",
+          "passed": true,
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_risk_over_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "trigger_confidence_below_40_false",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        }
+      ],
+      "metrics": {
+        "risk": 35.0,
+        "raw_model_probability": 36.9,
+        "clinical_severity_score": 32.0,
+        "status": "ok",
+        "gate_label": "Clear",
+        "confidence_score": 85.5,
+        "boundary_distance_pct": 19.9,
+        "ood_feature_count": 0,
+        "requires_clinician_review": false,
+        "trigger_flags": {
+          "risk_over_40": false,
+          "biomarkers_abnormal": false,
+          "confidence_below_40": false
+        }
+      }
+    },
+    {
+      "id": "abnormal_01",
+      "category": "true_abnormal",
+      "description": "Low calibrated risk but biomarker abnormality should trigger gate.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "caution",
+          "expected": [
+            "caution",
+            "blocked"
+          ]
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": true,
+          "expected": true
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_true",
+          "passed": true,
+          "actual": true,
+          "expected": true
+        },
+        {
+          "name": "triggers_any_true",
+          "passed": true,
+          "actual": {
+            "risk_over_40": false,
+            "biomarkers_abnormal": true,
+            "confidence_below_40": false
+          },
+          "expected": true
+        }
+      ],
+      "metrics": {
+        "risk": 13.3,
+        "raw_model_probability": 1.9,
+        "clinical_severity_score": 32.0,
+        "status": "caution",
+        "gate_label": "Provisional",
+        "confidence_score": 76.0,
+        "boundary_distance_pct": 15.1,
+        "ood_feature_count": 0,
+        "requires_clinician_review": true,
+        "trigger_flags": {
+          "risk_over_40": false,
+          "biomarkers_abnormal": true,
+          "confidence_below_40": false
+        }
+      }
+    },
+    {
+      "id": "abnormal_02",
+      "category": "true_abnormal",
+      "description": "Isolated troponin elevation should activate provisional gate.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "caution",
+          "expected": [
+            "caution",
+            "blocked"
+          ]
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": true,
+          "expected": true
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_true",
+          "passed": true,
+          "actual": true,
+          "expected": true
+        },
+        {
+          "name": "triggers_any_true",
+          "passed": true,
+          "actual": {
+            "risk_over_40": false,
+            "biomarkers_abnormal": true,
+            "confidence_below_40": false
+          },
+          "expected": true
+        }
+      ],
+      "metrics": {
+        "risk": 9.9,
+        "raw_model_probability": 1.9,
+        "clinical_severity_score": 23.0,
+        "status": "caution",
+        "gate_label": "Provisional",
+        "confidence_score": 78.7,
+        "boundary_distance_pct": 15.1,
+        "ood_feature_count": 0,
+        "requires_clinician_review": true,
+        "trigger_flags": {
+          "risk_over_40": false,
+          "biomarkers_abnormal": true,
+          "confidence_below_40": false
+        }
+      }
+    },
+    {
+      "id": "abnormal_03",
+      "category": "true_abnormal",
+      "description": "BNP elevation should force safety review.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "blocked",
+          "expected": [
+            "caution",
+            "blocked"
+          ]
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": true,
+          "expected": true
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_true",
+          "passed": true,
+          "actual": true,
+          "expected": true
+        },
+        {
+          "name": "triggers_any_true",
+          "passed": true,
+          "actual": {
+            "risk_over_40": false,
+            "biomarkers_abnormal": true,
+            "confidence_below_40": false
+          },
+          "expected": true
+        }
+      ],
+      "metrics": {
+        "risk": 30.4,
+        "raw_model_probability": 20.8,
+        "clinical_severity_score": 46.0,
+        "status": "blocked",
+        "gate_label": "Blocked",
+        "confidence_score": 63.5,
+        "boundary_distance_pct": 3.8,
+        "ood_feature_count": 0,
+        "requires_clinician_review": true,
+        "trigger_flags": {
+          "risk_over_40": false,
+          "biomarkers_abnormal": true,
+          "confidence_below_40": false
+        }
+      }
+    },
+    {
+      "id": "abnormal_04",
+      "category": "true_abnormal",
+      "description": "Reduced EF should trigger clinician review.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "caution",
+          "expected": [
+            "caution",
+            "blocked"
+          ]
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": true,
+          "expected": true
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_true",
+          "passed": true,
+          "actual": true,
+          "expected": true
+        },
+        {
+          "name": "triggers_any_true",
+          "passed": true,
+          "actual": {
+            "risk_over_40": true,
+            "biomarkers_abnormal": true,
+            "confidence_below_40": false
+          },
+          "expected": true
+        }
+      ],
+      "metrics": {
+        "risk": 60.0,
+        "raw_model_probability": 63.7,
+        "clinical_severity_score": 54.0,
+        "status": "caution",
+        "gate_label": "Provisional",
+        "confidence_score": 79.1,
+        "boundary_distance_pct": 46.7,
+        "ood_feature_count": 0,
+        "requires_clinician_review": true,
+        "trigger_flags": {
+          "risk_over_40": true,
+          "biomarkers_abnormal": true,
+          "confidence_below_40": false
+        }
+      }
+    },
+    {
+      "id": "abnormal_05",
+      "category": "true_abnormal",
+      "description": "Multi-signal abnormal profile should be caution/blocked.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "blocked",
+          "expected": [
+            "caution",
+            "blocked"
+          ]
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": true,
+          "expected": true
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_true",
+          "passed": true,
+          "actual": true,
+          "expected": true
+        },
+        {
+          "name": "triggers_any_true",
+          "passed": true,
+          "actual": {
+            "risk_over_40": true,
+            "biomarkers_abnormal": true,
+            "confidence_below_40": false
+          },
+          "expected": true
+        }
+      ],
+      "metrics": {
+        "risk": 99.0,
+        "raw_model_probability": 99.0,
+        "clinical_severity_score": 99.0,
+        "status": "blocked",
+        "gate_label": "Blocked",
+        "confidence_score": 64.0,
+        "boundary_distance_pct": 82.0,
+        "ood_feature_count": 0,
+        "requires_clinician_review": true,
+        "trigger_flags": {
+          "risk_over_40": true,
+          "biomarkers_abnormal": true,
+          "confidence_below_40": false
+        }
+      }
+    },
+    {
+      "id": "abnormal_06",
+      "category": "true_abnormal",
+      "description": "High-risk preset with abnormal biomarkers and low EF.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "blocked",
+          "expected": [
+            "caution",
+            "blocked"
+          ]
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": true,
+          "expected": true
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_true",
+          "passed": true,
+          "actual": true,
+          "expected": true
+        },
+        {
+          "name": "triggers_any_true",
+          "passed": true,
+          "actual": {
+            "risk_over_40": true,
+            "biomarkers_abnormal": true,
+            "confidence_below_40": false
+          },
+          "expected": true
+        }
+      ],
+      "metrics": {
+        "risk": 66.7,
+        "raw_model_probability": 56.1,
+        "clinical_severity_score": 84.0,
+        "status": "blocked",
+        "gate_label": "Blocked",
+        "confidence_score": 45.7,
+        "boundary_distance_pct": 39.1,
+        "ood_feature_count": 1,
+        "requires_clinician_review": true,
+        "trigger_flags": {
+          "risk_over_40": true,
+          "biomarkers_abnormal": true,
+          "confidence_below_40": false
+        }
+      }
+    },
+    {
+      "id": "abnormal_07",
+      "category": "true_abnormal",
+      "description": "Critical ischemic/injury profile should strongly block.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "blocked",
+          "expected": [
+            "caution",
+            "blocked"
+          ]
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": true,
+          "expected": true
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_true",
+          "passed": true,
+          "actual": true,
+          "expected": true
+        },
+        {
+          "name": "triggers_any_true",
+          "passed": true,
+          "actual": {
+            "risk_over_40": true,
+            "biomarkers_abnormal": true,
+            "confidence_below_40": true
+          },
+          "expected": true
+        }
+      ],
+      "metrics": {
+        "risk": 96.6,
+        "raw_model_probability": 95.1,
+        "clinical_severity_score": 99.0,
+        "status": "blocked",
+        "gate_label": "Blocked",
+        "confidence_score": 22.8,
+        "boundary_distance_pct": 78.1,
+        "ood_feature_count": 1,
+        "requires_clinician_review": true,
+        "trigger_flags": {
+          "risk_over_40": true,
+          "biomarkers_abnormal": true,
+          "confidence_below_40": true
+        }
+      }
+    },
+    {
+      "id": "abnormal_08",
+      "category": "true_abnormal",
+      "description": "Extreme outlier profile should be blocked with low confidence.",
+      "all_checks_passed": true,
+      "failed_checks": [],
+      "checks": [
+        {
+          "name": "status_in",
+          "passed": true,
+          "actual": "blocked",
+          "expected": [
+            "caution",
+            "blocked"
+          ]
+        },
+        {
+          "name": "requires_clinician_review",
+          "passed": true,
+          "actual": true,
+          "expected": true
+        },
+        {
+          "name": "trigger_biomarkers_abnormal_true",
+          "passed": true,
+          "actual": true,
+          "expected": true
+        },
+        {
+          "name": "triggers_any_true",
+          "passed": true,
+          "actual": {
+            "risk_over_40": true,
+            "biomarkers_abnormal": true,
+            "confidence_below_40": true
+          },
+          "expected": true
+        }
+      ],
+      "metrics": {
+        "risk": 92.4,
+        "raw_model_probability": 88.4,
+        "clinical_severity_score": 99.0,
+        "status": "blocked",
+        "gate_label": "Blocked",
+        "confidence_score": 20.8,
+        "boundary_distance_pct": 71.4,
+        "ood_feature_count": 7,
+        "requires_clinician_review": true,
+        "trigger_flags": {
+          "risk_over_40": true,
+          "biomarkers_abnormal": true,
+          "confidence_below_40": true
+        }
+      }
+    }
+  ]
+}

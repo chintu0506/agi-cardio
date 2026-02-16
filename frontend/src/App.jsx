@@ -221,7 +221,7 @@ function getSafetyStatusTitle(status) {
   const normalized = String(status || '').toLowerCase()
   if (normalized === 'blocked') return 'AI Safety Gate: Blocked'
   if (normalized === 'caution') return 'AI Safety Gate: Provisional'
-  return 'AI Safety Gate: Standard'
+  return 'AI Safety Gate: Clear'
 }
 
 function parseDoctorSummary(note) {
@@ -649,6 +649,7 @@ function App() {
       tone,
       title: getSafetyStatusTitle(status),
       summary: String(safety.summary || ''),
+      clinicalJustification: String(safety.clinical_justification || ''),
       reasons: Array.isArray(safety.reasons) ? safety.reasons : [],
       confidenceScore: Number.isFinite(Number(safety.confidence_score)) ? Number(safety.confidence_score) : null,
       boundaryDistance: Number.isFinite(Number(safety?.uncertainty?.boundary_distance_pct))
@@ -2470,9 +2471,12 @@ function App() {
                 <article className={`safety-banner ${safetyAssessment.tone}`}>
                   <header>
                     <strong>{safetyAssessment.title}</strong>
-                    <span>{result?.requires_clinician_review ? 'Clinician review required' : 'No hard safety block'}</span>
+                    <span>{result?.requires_clinician_review ? 'Clinician review required' : 'Safety gate clear'}</span>
                   </header>
                   <p>{safetyAssessment.summary || 'Use this output only as decision support.'}</p>
+                  {safetyAssessment.clinicalJustification && (
+                    <p className="muted">Clinical justification: {safetyAssessment.clinicalJustification}</p>
+                  )}
                   {safetyAssessment.reasons.length > 0 && (
                     <ul className="list">
                       {safetyAssessment.reasons.map((reason, idx) => <li key={`safety-reason-${idx}`}>{reason}</li>)}

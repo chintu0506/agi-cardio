@@ -1,0 +1,63 @@
+name: Safety Gate Calibration
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - "codex/**"
+  pull_request:
+
+jobs:
+  backend-safety-calibration:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Run safety gate calibration tests
+        run: python -m unittest backend/tests/test_safety_gate_calibration.py
+
+      - name: Generate safety gate calibration report
+        run: python backend/tests/generate_safety_gate_calibration_report.py
+
+      - name: Enforce zero calibration failures
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report_path = Path("backend/tests/reports/safety_gate_calibration_report.json")
+          if not report_path.exists():
+              raise SystemExit(f"Missing calibration report: {report_path}")
+          with report_path.open() as f:
+              report = json.load(f)
+          summary = report.get("summary", {})
+          failed_cases = int(summary.get("failed_cases", 0))
+          total_cases = int(summary.get("total_cases", 0))
+          pass_rate = float(summary.get("pass_rate_pct", 0.0))
+          print(f"Calibration summary: {total_cases} total, {failed_cases} failed, {pass_rate:.1f}% pass rate")
+          if failed_cases > 0:
+              raise SystemExit("Safety gate calibration failed: failed_cases > 0")
+          PY
+
+      - name: Upload calibration report artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: safety-gate-calibration-report
+          path: |
+            backend/tests/reports/safety_gate_calibration_report.md
+            backend/tests/reports/safety_gate_calibration_report.json
+          if-no-files-found: error
