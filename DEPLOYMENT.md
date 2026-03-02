@@ -1,16 +1,6 @@
 # Production Deployment
 
-## One-command startup
-
-```bash
-./run-prod.sh
-```
-
-This builds and starts:
-- Frontend on `http://localhost:8080`
-- Backend API on `http://localhost:5000`
-
-## Environment setup
+## Local/VM deployment from source
 
 1. Copy template:
 
@@ -21,6 +11,39 @@ cp .env.production.example .env
 2. Fill real SMTP/OTP provider values in `.env`.
    - For email OTP: set `SMTP_*`
    - For mobile OTP: set optional `TWILIO_*` values
+
+3. Start services:
+
+```bash
+./run-prod.sh
+```
+
+This builds and starts:
+- Frontend on `http://localhost:8080`
+- Backend API on `http://localhost:5000`
+
+## GitHub deployment (GHCR images)
+
+Use GitHub Actions to build and publish Docker images to GitHub Container Registry.
+
+1. Push this repository to GitHub (default branch: `main` or `master`).
+2. In your GitHub repo, ensure Actions are enabled.
+3. Optional: set repo variable `VITE_API_BASE` if frontend should call a fully-qualified backend URL.
+   - Leave unset to use same-origin `/api` (recommended with the included Nginx proxy).
+4. Trigger workflow [`deploy-ghcr.yml`](./.github/workflows/deploy-ghcr.yml) by pushing to default branch or running it manually.
+5. On your server/VM, create `.env` from `.env.production.example` and add:
+
+```bash
+GHCR_REPOSITORY=<github-owner>/<github-repo>
+IMAGE_TAG=latest
+```
+
+6. Pull and run published images:
+
+```bash
+docker login ghcr.io
+docker compose -f docker-compose.ghcr.yml --env-file .env up -d
+```
 
 ## Health and readiness
 
@@ -42,6 +65,14 @@ Docker volumes are used for:
 docker compose ps
 docker compose logs -f
 docker compose down
+```
+
+For GHCR compose:
+
+```bash
+docker compose -f docker-compose.ghcr.yml --env-file .env ps
+docker compose -f docker-compose.ghcr.yml --env-file .env logs -f
+docker compose -f docker-compose.ghcr.yml --env-file .env down
 ```
 
 Manual DB backup:

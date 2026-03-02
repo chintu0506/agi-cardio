@@ -4,7 +4,7 @@ import AuthScreen from './components/AuthScreen'
 import PortalHeader from './components/PortalHeader'
 import CreateProfilePage from './pages/CreateProfilePage'
 
-const API_BASE_ENV = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:5000'
+const API_BASE_ENV = String(import.meta.env.VITE_API_BASE || '').replace(/\/+$/, '')
 const LIVE_ECG_REFRESH_MS = 700
 
 const DEFAULT_ECG_PROMPT = {

@@ -1,0 +1,54 @@
+services:
+  backend:
+    image: ghcr.io/${GHCR_REPOSITORY}-backend:${IMAGE_TAG:-latest}
+    container_name: agi-cardio-backend
+    restart: unless-stopped
+    environment:
+      AGI_BACKEND_HOST: 0.0.0.0
+      AGI_BACKEND_PORT: 5000
+      AGI_DB_BACKUP_ON_START: ${AGI_DB_BACKUP_ON_START:-1}
+      AGI_DB_MAX_BACKUPS: ${AGI_DB_MAX_BACKUPS:-30}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      OTP_ALLOW_PREVIEW: ${OTP_ALLOW_PREVIEW:-false}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
+      OTP_DEFAULT_COUNTRY_CODE: ${OTP_DEFAULT_COUNTRY_CODE:-+91}
+    expose:
+      - "5000"
+    volumes:
+      - backend_data:/app/data
+      - backend_uploads:/app/uploads
+      - backend_backups:/app/backups
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5000/api/ready', timeout=3).getcode()==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  frontend:
+    image: ghcr.io/${GHCR_REPOSITORY}-frontend:${IMAGE_TAG:-latest}
+    container_name: agi-cardio-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  backend_data:
+  backend_uploads:
+  backend_backups:
