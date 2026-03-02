@@ -12,6 +12,10 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY . /app
 
+# GitHub builds do not include git-ignored model binaries.
+# Train and materialize model artifacts during image build when missing.
+RUN if [ ! -f /app/models/master_model.pkl ]; then python /app/train_model.py; fi
+
 EXPOSE 5000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

@@ -1,6 +1,7 @@
 services:
   backend:
     image: ghcr.io/${GHCR_REPOSITORY}-backend:${IMAGE_TAG:-latest}
+    platform: linux/amd64
     container_name: agi-cardio-backend
     restart: unless-stopped
     environment:
@@ -34,6 +35,7 @@ services:
 
   frontend:
     image: ghcr.io/${GHCR_REPOSITORY}-frontend:${IMAGE_TAG:-latest}
+    platform: linux/amd64
     container_name: agi-cardio-frontend
     restart: unless-stopped
     depends_on:
