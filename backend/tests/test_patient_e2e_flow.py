@@ -202,6 +202,8 @@ class PatientE2EFlowTests(unittest.TestCase):
             role="patient",
             login_value=mobile,
         )
+        old_password = "pass1234"
+        new_password = "newpass123"
 
         initiate = self.client.post(
             "/api/auth/forgot-password/initiate",
@@ -215,13 +217,25 @@ class PatientE2EFlowTests(unittest.TestCase):
 
         verify = self.client.post(
             "/api/auth/forgot-password/verify",
-            json={"otp_id": otp_id, "otp_code": otp_code},
+            json={"otp_id": otp_id, "otp_code": otp_code, "new_password": new_password},
         )
         self.assertEqual(verify.status_code, 200, verify.get_data(as_text=True))
         verify_payload = verify.get_json()
         self.assertTrue(verify_payload.get("token"))
         self.assertEqual(verify_payload.get("user", {}).get("role"), "patient")
         self.assertTrue(str(verify_payload.get("user", {}).get("mobile") or "").endswith("9123456780"))
+
+        old_login = self.client.post(
+            "/api/auth/login",
+            json={"login": mobile, "password": old_password},
+        )
+        self.assertEqual(old_login.status_code, 401, old_login.get_data(as_text=True))
+
+        new_login = self.client.post(
+            "/api/auth/login",
+            json={"login": mobile, "password": new_password},
+        )
+        self.assertEqual(new_login.status_code, 200, new_login.get_data(as_text=True))
 
     def test_contact_update_via_otp_for_email_and_mobile(self):
         login_payload = self._signup_verify_login(

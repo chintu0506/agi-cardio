@@ -18,7 +18,7 @@ export default function AuthScreen({
 }) {
   const title = authMode === 'signup' ? 'Sign Up' : authMode === 'forgot' ? 'Forgot Password' : 'Login'
   const subtitle = authMode === 'forgot'
-    ? 'Use OTP on your mobile to login when you forgot password.'
+    ? 'Use OTP on your mobile and set a new password.'
     : 'Signup uses OTP verification. Login uses password authentication.'
   return (
     <main className="app-shell">
@@ -96,14 +96,26 @@ export default function AuthScreen({
             <>
               <p className="muted">
                 {authMode === 'forgot'
-                  ? 'Enter OTP sent to your mobile. After verification, you will be logged in.'
+                  ? 'Enter OTP sent to your mobile and choose your new password.'
                   : 'Enter OTP sent to your registered email/mobile. OTP valid for 5 minutes.'}
               </p>
               <div className="profile-create-grid">
                 <label><span>OTP Code</span><input value={otpCode} onChange={(e) => setOtpCode(e.target.value)} placeholder="6-digit OTP" /></label>
+                {authMode === 'forgot' && (
+                  <label>
+                    <span>New Password</span>
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      value={authForm.reset_password}
+                      onChange={(e) => setAuthForm((p) => ({ ...p, reset_password: e.target.value }))}
+                      placeholder="Minimum 6 characters"
+                    />
+                  </label>
+                )}
               </div>
               <div className="actions">
-                <button type="button" className="btn primary" onClick={verifyOtp} disabled={authLoading}>{authLoading ? 'Verifying...' : authMode === 'forgot' ? 'Verify OTP And Login' : 'Verify OTP'}</button>
+                <button type="button" className="btn primary" onClick={verifyOtp} disabled={authLoading}>{authLoading ? 'Verifying...' : authMode === 'forgot' ? 'Verify OTP And Update Password' : 'Verify OTP'}</button>
                 <button type="button" className="btn" onClick={resendOtp} disabled={authLoading}>Resend OTP</button>
                 <button type="button" className="btn" onClick={() => setAuthStage('credentials')} disabled={authLoading}>Back</button>
               </div>

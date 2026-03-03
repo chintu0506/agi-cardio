@@ -436,6 +436,7 @@ function App() {
     email: '',
     mobile: '',
     password: '',
+    reset_password: '',
     role: 'patient',
     login: '',
   })
@@ -938,7 +939,7 @@ function App() {
     setAuthStage('credentials')
     setOtpCode('')
     setOtpSession(null)
-    setAuthForm((prev) => ({ ...prev, password: '' }))
+    setAuthForm((prev) => ({ ...prev, password: '', reset_password: '' }))
     setError('')
   }
 
@@ -1061,8 +1062,9 @@ function App() {
           otp_id: data.otp_id,
           expires_at: data.expires_at,
         })
+        setAuthForm((prev) => ({ ...prev, reset_password: '' }))
         setAuthStage('otp')
-        setError(`${statusText} via ${deliveryLabel}. Enter OTP to login.${preview}${note}`)
+        setError(`${statusText} via ${deliveryLabel}. Enter OTP and new password.${preview}${note}`)
       } else {
         setAuthStage('credentials')
         setError(`OTP not delivered via ${deliveryLabel}.${note} Configure provider settings and try again.`)
@@ -1102,16 +1104,22 @@ function App() {
         setAuthForm((prev) => ({ ...prev, login: loginHint, password: '' }))
         setError(`Signup complete. User ID: ${data?.user?.user_id}. Please login with password.`)
       } else if (otpSession.purpose === 'forgot_password_login') {
+        const newPassword = authForm.reset_password
+        if (!newPassword || newPassword.length < 6) {
+          throw new Error('Enter new password (minimum 6 characters).')
+        }
         const route = '/api/auth/forgot-password/verify'
         const { response, data } = await authJsonWith405Fallback(`${apiBase}${route}`, {
           otp_id: otpSession.otp_id,
           otp_code: otpCode.trim(),
+          new_password: newPassword,
         })
         if (!response.ok) throw new Error(data?.error || 'OTP verification failed')
         setAuthMode('login')
         setAuthStage('credentials')
         setOtpCode('')
         setOtpSession(null)
+        setAuthForm((prev) => ({ ...prev, reset_password: '', password: '' }))
         setError('')
         await applyLoginSuccess(data)
       } else {

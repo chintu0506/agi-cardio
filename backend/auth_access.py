@@ -613,8 +613,11 @@ def install_auth_access_routes(app, get_db, cors, upload_dir):
             body = request.args.to_dict() or body
         otp_id = str(body.get("otp_id", "")).strip()
         otp_code = str(body.get("otp_code", "")).strip()
+        new_password = str(body.get("new_password", ""))
         if not otp_id or not otp_code:
             return cors({"error": "otp_id and otp_code are required."}, 400)
+        if len(new_password) < 6:
+            return cors({"error": "new_password must be at least 6 characters."}, 400)
 
         conn = get_db()
         try:
@@ -636,12 +639,28 @@ def install_auth_access_routes(app, get_db, cors, upload_dir):
             ).fetchone()
             if not user_row:
                 return cors({"error": "User not found."}, 404)
+            conn.execute(
+                "UPDATE users SET password_hash = ? WHERE user_id = ?",
+                (generate_password_hash(new_password), user_id),
+            )
             conn.execute("DELETE FROM otp_codes WHERE otp_id = ?", (otp_id,))
             conn.commit()
+
+            # Invalidate old sessions after password reset.
+            for token, sess in list(SESSIONS.items()):
+                sess_user = sess.get("user", {})
+                if str(sess_user.get("user_id") or "") == user_id:
+                    SESSIONS.pop(token, None)
+
+            user_row = conn.execute(
+                """SELECT user_id, name, email, mobile, password_hash, role, created_at
+                   FROM users WHERE user_id = ?""",
+                (user_id,),
+            ).fetchone()
             token, expires_at, user = _create_login_session(user_row)
             return cors(
                 {
-                    "message": "OTP verified. Login successful.",
+                    "message": "OTP verified. Password updated and login successful.",
                     "token": token,
                     "expires_at": expires_at,
                     "user": user,
