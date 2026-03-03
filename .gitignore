@@ -32,3 +32,8 @@ backend/backups/
 models/*.pkl
 backend/models/*.pkl
 backend/models/eval_report.json
+
+# Local auto-sync runtime files
+.autosync.pid
+.autosync.log
+.autosync.pause
