@@ -2211,10 +2211,10 @@ function App() {
               <label><span>New Mobile</span><input value={contactUpdateForm.mobile} onChange={(e) => setContactUpdateForm((prev) => ({ ...prev, mobile: e.target.value }))} placeholder="10+ digit mobile" /></label>
             </div>
             <div className="actions">
-              <button className="btn" onClick={() => initiateContactUpdate('email')} disabled={contactUpdateLoading}>
+              <button type="button" className="btn" onClick={() => initiateContactUpdate('email')} disabled={contactUpdateLoading}>
                 {contactUpdateLoading && contactUpdateSession?.type === 'email' ? 'Sending OTP...' : 'Change Email (OTP)'}
               </button>
-              <button className="btn" onClick={() => initiateContactUpdate('mobile')} disabled={contactUpdateLoading}>
+              <button type="button" className="btn" onClick={() => initiateContactUpdate('mobile')} disabled={contactUpdateLoading}>
                 {contactUpdateLoading && contactUpdateSession?.type === 'mobile' ? 'Sending OTP...' : 'Change Mobile (OTP)'}
               </button>
             </div>
@@ -2227,10 +2227,10 @@ function App() {
                   <label><span>OTP Code</span><input value={contactUpdateForm.otp} onChange={(e) => setContactUpdateForm((prev) => ({ ...prev, otp: e.target.value }))} placeholder="6-digit OTP" /></label>
                 </div>
                 <div className="actions">
-                  <button className="btn primary" onClick={verifyContactUpdateOtp} disabled={contactUpdateLoading}>
+                  <button type="button" className="btn primary" onClick={verifyContactUpdateOtp} disabled={contactUpdateLoading}>
                     {contactUpdateLoading ? 'Verifying...' : 'Verify Contact OTP'}
                   </button>
-                  <button className="btn" onClick={resendContactUpdateOtp} disabled={contactUpdateLoading}>Resend OTP</button>
+                  <button type="button" className="btn" onClick={resendContactUpdateOtp} disabled={contactUpdateLoading}>Resend OTP</button>
                 </div>
               </>
             )}

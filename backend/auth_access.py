@@ -587,10 +587,12 @@ def install_auth_access_routes(app, get_db, cors, upload_dir):
         finally:
             conn.close()
 
-    @app.route("/api/auth/contact-update/initiate", methods=["POST"])
+    @app.route("/api/auth/contact-update/initiate", methods=["GET", "POST"])
     @auth_required()
     def auth_contact_update_initiate():
         body = request.get_json(silent=True) or {}
+        if request.method == "GET":
+            body = request.args.to_dict() or body
         contact_type = str(body.get("type", "")).strip().lower()
         value_raw = _clean_optional_contact(body.get("value"))
         if contact_type not in {"email", "mobile"}:
@@ -663,10 +665,12 @@ def install_auth_access_routes(app, get_db, cors, upload_dir):
         finally:
             conn.close()
 
-    @app.route("/api/auth/contact-update/verify", methods=["POST"])
+    @app.route("/api/auth/contact-update/verify", methods=["GET", "POST"])
     @auth_required()
     def auth_contact_update_verify():
         body = request.get_json(silent=True) or {}
+        if request.method == "GET":
+            body = request.args.to_dict() or body
         otp_id = str(body.get("otp_id", "")).strip()
         otp_code = str(body.get("otp_code", "")).strip()
         if not otp_id or not otp_code:
