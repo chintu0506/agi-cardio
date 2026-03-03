@@ -192,6 +192,37 @@ class PatientE2EFlowTests(unittest.TestCase):
         self.assertEqual(user["role"], "patient")
         self.assertTrue(str(user.get("mobile") or "").endswith("7777666655"))
 
+    def test_forgot_password_mobile_otp_login_flow(self):
+        mobile = "919123456780"
+        self._signup_verify_login(
+            name="Forgot OTP Patient",
+            email="",
+            mobile=mobile,
+            password="pass1234",
+            role="patient",
+            login_value=mobile,
+        )
+
+        initiate = self.client.post(
+            "/api/auth/forgot-password/initiate",
+            json={"mobile": mobile},
+        )
+        self.assertEqual(initiate.status_code, 200, initiate.get_data(as_text=True))
+        init_payload = initiate.get_json()
+        otp_id = init_payload.get("otp_id")
+        self.assertTrue(otp_id)
+        otp_code = self._resolve_otp_code(otp_id, init_payload)
+
+        verify = self.client.post(
+            "/api/auth/forgot-password/verify",
+            json={"otp_id": otp_id, "otp_code": otp_code},
+        )
+        self.assertEqual(verify.status_code, 200, verify.get_data(as_text=True))
+        verify_payload = verify.get_json()
+        self.assertTrue(verify_payload.get("token"))
+        self.assertEqual(verify_payload.get("user", {}).get("role"), "patient")
+        self.assertTrue(str(verify_payload.get("user", {}).get("mobile") or "").endswith("9123456780"))
+
     def test_contact_update_via_otp_for_email_and_mobile(self):
         login_payload = self._signup_verify_login(
             name="Contact Update Patient",

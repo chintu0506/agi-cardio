@@ -394,6 +394,20 @@ def install_auth_access_routes(app, get_db, cors, upload_dir):
 
         return deco
 
+    def _create_login_session(user_row):
+        token = uuid.uuid4().hex
+        expires_at = (datetime.now() + timedelta(hours=12)).isoformat()
+        user = {
+            "user_id": user_row["user_id"],
+            "name": user_row["name"],
+            "email": user_row["email"],
+            "mobile": user_row["mobile"],
+            "role": user_row["role"],
+            "created_at": user_row["created_at"],
+        }
+        SESSIONS[token] = {"user": user, "expires_at": expires_at}
+        return token, expires_at, user
+
     @app.route("/api/auth/signup/initiate", methods=["GET", "POST"])
     def auth_signup_initiate():
         body = request.get_json(silent=True) or {}
@@ -533,20 +547,101 @@ def install_auth_access_routes(app, get_db, cors, upload_dir):
             row = _find_user_for_login(conn, login)
             if not row or not check_password_hash(row["password_hash"], password):
                 return cors({"error": "Invalid credentials."}, 401)
-            token = uuid.uuid4().hex
-            expires_at = (datetime.now() + timedelta(hours=12)).isoformat()
-            user = {
-                "user_id": row["user_id"],
-                "name": row["name"],
-                "email": row["email"],
-                "mobile": row["mobile"],
-                "role": row["role"],
-                "created_at": row["created_at"],
-            }
-            SESSIONS[token] = {"user": user, "expires_at": expires_at}
+            token, expires_at, user = _create_login_session(row)
             return cors(
                 {
                     "message": "Login successful.",
+                    "token": token,
+                    "expires_at": expires_at,
+                    "user": user,
+                }
+            )
+        finally:
+            conn.close()
+
+    @app.route("/api/auth/forgot-password/initiate", methods=["GET", "POST"])
+    def auth_forgot_password_initiate():
+        body = request.get_json(silent=True) or {}
+        if request.method == "GET":
+            body = request.args.to_dict() or body
+        mobile = _normalize_mobile(_clean_optional_contact(body.get("mobile")))
+        if not mobile or len(mobile) < 10:
+            return cors({"error": "Provide a valid mobile number (at least 10 digits)."}, 400)
+
+        conn = get_db()
+        try:
+            row = _find_user_for_login(conn, mobile)
+            if not row:
+                return cors({"error": "No account found for this mobile number."}, 404)
+            row_mobile = _normalize_mobile(row["mobile"])
+            if not row_mobile:
+                return cors({"error": "Selected account has no mobile number configured."}, 400)
+            if not _mobile_variants(row_mobile).intersection(_mobile_variants(mobile)):
+                return cors({"error": "No account found for this mobile number."}, 404)
+
+            otp = _create_otp_record(
+                conn,
+                user_contact=row_mobile,
+                purpose="forgot_password_login",
+                ttl_minutes=5,
+                attempts_left=5,
+                user_id=row["user_id"],
+                mobile=row_mobile,
+            )
+            delivery_info = _deliver_otp(mobile=row_mobile, otp_code=otp["otp_code"])
+            allow_preview = _truthy_env("OTP_ALLOW_PREVIEW", True)
+            response = {
+                "message": f"OTP sent to {row_mobile}. Verify OTP to login.",
+                "otp_id": otp["otp_id"],
+                "expires_at": otp["expires_at"],
+                "delivery": delivery_info["delivery"],
+                "delivery_target": row_mobile,
+                "delivery_status": "sent" if delivery_info["delivered"] else "failed",
+                "delivery_note": delivery_info["note"],
+            }
+            if not delivery_info["delivered"] and allow_preview:
+                response["otp_preview"] = otp["otp_code"]
+                response["otp_note"] = "Provider delivery failed/unavailable. Use OTP preview for testing."
+            return cors(response)
+        finally:
+            conn.close()
+
+    @app.route("/api/auth/forgot-password/verify", methods=["GET", "POST"])
+    def auth_forgot_password_verify():
+        body = request.get_json(silent=True) or {}
+        if request.method == "GET":
+            body = request.args.to_dict() or body
+        otp_id = str(body.get("otp_id", "")).strip()
+        otp_code = str(body.get("otp_code", "")).strip()
+        if not otp_id or not otp_code:
+            return cors({"error": "otp_id and otp_code are required."}, 400)
+
+        conn = get_db()
+        try:
+            row, err = _verify_otp_record(
+                conn,
+                otp_id=otp_id,
+                otp_code=otp_code,
+                purpose="forgot_password_login",
+            )
+            if err:
+                return cors({"error": err}, 400)
+            user_id = str(row["user_id"] or "").strip()
+            if not user_id:
+                return cors({"error": "OTP session has no user attached."}, 400)
+            user_row = conn.execute(
+                """SELECT user_id, name, email, mobile, password_hash, role, created_at
+                   FROM users WHERE user_id = ?""",
+                (user_id,),
+            ).fetchone()
+            if not user_row:
+                return cors({"error": "User not found."}, 404)
+            conn.execute("DELETE FROM otp_codes WHERE otp_id = ?", (otp_id,))
+            conn.commit()
+            token, expires_at, user = _create_login_session(user_row)
+            return cors(
+                {
+                    "message": "OTP verified. Login successful.",
                     "token": token,
                     "expires_at": expires_at,
                     "user": user,

@@ -985,19 +985,10 @@ function App() {
     }
   }
 
-  async function login() {
+  async function applyLoginSuccess(data) {
+    if (!data?.token || !data?.user) throw new Error('Invalid login response from server.')
     setAuthLoading(true)
-    setError('')
     try {
-      const { response, data } = await fetchJsonSafe(`${apiBase}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          login: authForm.login.trim(),
-          password: authForm.password,
-        }),
-      })
-      if (!response.ok) throw new Error(data?.error || 'Login failed')
       setAuthToken(data.token)
       setAuthUser(data.user)
       setContactUpdateSession(null)
@@ -1021,10 +1012,63 @@ function App() {
         await loadDoctorsForPatient(data.token)
         await loadPatientAppointments(data.token)
       }
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  async function login() {
+    setAuthLoading(true)
+    setError('')
+    try {
+      const { response, data } = await fetchJsonSafe(`${apiBase}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          login: authForm.login.trim(),
+          password: authForm.password,
+        }),
+      })
+      if (!response.ok) throw new Error(data?.error || 'Login failed')
+      await applyLoginSuccess(data)
     } catch (e) {
       setError(e.message)
       setAuthToken('')
       setAuthUser(null)
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  async function forgotPasswordLogin() {
+    setAuthLoading(true)
+    setError('')
+    try {
+      const mobile = authForm.mobile.trim()
+      if (!mobile) throw new Error('Enter your registered mobile number.')
+      const { response, data } = await authJsonWith405Fallback(`${apiBase}/api/auth/forgot-password/initiate`, {
+        mobile,
+      })
+      if (!response.ok) throw new Error(data?.error || 'Failed to initiate OTP login')
+      const preview = data?.otp_preview ? ` OTP: ${data.otp_preview}` : ''
+      const deliveryLabel = data?.delivery || 'channel'
+      const statusText = data?.delivery_status === 'sent' ? 'OTP sent' : 'OTP not delivered'
+      const note = data?.delivery_note ? ` ${data.delivery_note}` : ''
+      const canProceedToVerify = data?.delivery_status === 'sent' || Boolean(data?.otp_preview)
+      if (canProceedToVerify) {
+        setOtpSession({
+          purpose: 'forgot_password_login',
+          otp_id: data.otp_id,
+          expires_at: data.expires_at,
+        })
+        setAuthStage('otp')
+        setError(`${statusText} via ${deliveryLabel}. Enter OTP to login.${preview}${note}`)
+      } else {
+        setAuthStage('credentials')
+        setError(`OTP not delivered via ${deliveryLabel}.${note} Configure provider settings and try again.`)
+      }
+    } catch (e) {
+      setError(e.message)
     } finally {
       setAuthLoading(false)
     }
@@ -1035,10 +1079,6 @@ function App() {
       setError('OTP session missing. Start login/signup again.')
       return
     }
-    if (otpSession.purpose !== 'signup') {
-      setError('OTP verification is only required for signup.')
-      return
-    }
     if (!otpCode.trim()) {
       setError('Enter OTP code.')
       return
@@ -1046,20 +1086,37 @@ function App() {
     setAuthLoading(true)
     setError('')
     try {
-      const route = '/api/auth/signup/verify'
-      const { response, data } = await authJsonWith405Fallback(`${apiBase}${route}`, {
-        otp_id: otpSession.otp_id,
-        otp_code: otpCode.trim(),
-      })
-      if (!response.ok) throw new Error(data?.error || 'OTP verification failed')
+      if (otpSession.purpose === 'signup') {
+        const route = '/api/auth/signup/verify'
+        const { response, data } = await authJsonWith405Fallback(`${apiBase}${route}`, {
+          otp_id: otpSession.otp_id,
+          otp_code: otpCode.trim(),
+        })
+        if (!response.ok) throw new Error(data?.error || 'OTP verification failed')
 
-      const loginHint = data?.user?.email || data?.user?.mobile || ''
-      setAuthStage('credentials')
-      setAuthMode('login')
-      setOtpCode('')
-      setOtpSession(null)
-      setAuthForm((prev) => ({ ...prev, login: loginHint, password: '' }))
-      setError(`Signup complete. User ID: ${data?.user?.user_id}. Please login with password.`)
+        const loginHint = data?.user?.email || data?.user?.mobile || ''
+        setAuthStage('credentials')
+        setAuthMode('login')
+        setOtpCode('')
+        setOtpSession(null)
+        setAuthForm((prev) => ({ ...prev, login: loginHint, password: '' }))
+        setError(`Signup complete. User ID: ${data?.user?.user_id}. Please login with password.`)
+      } else if (otpSession.purpose === 'forgot_password_login') {
+        const route = '/api/auth/forgot-password/verify'
+        const { response, data } = await authJsonWith405Fallback(`${apiBase}${route}`, {
+          otp_id: otpSession.otp_id,
+          otp_code: otpCode.trim(),
+        })
+        if (!response.ok) throw new Error(data?.error || 'OTP verification failed')
+        setAuthMode('login')
+        setAuthStage('credentials')
+        setOtpCode('')
+        setOtpSession(null)
+        setError('')
+        await applyLoginSuccess(data)
+      } else {
+        throw new Error('Unsupported OTP verification purpose.')
+      }
     } catch (e) {
       setError(e.message)
     } finally {
@@ -1070,6 +1127,10 @@ function App() {
   async function resendOtp() {
     if (authMode === 'signup' || otpSession?.purpose === 'signup') {
       await signUp()
+      return
+    }
+    if (authMode === 'forgot' || otpSession?.purpose === 'forgot_password_login') {
+      await forgotPasswordLogin()
     }
   }
 
@@ -2141,6 +2202,7 @@ function App() {
         switchAuthMode={switchAuthMode}
         signUp={signUp}
         login={login}
+        forgotPasswordLogin={forgotPasswordLogin}
         verifyOtp={verifyOtp}
         resendOtp={resendOtp}
         setAuthStage={setAuthStage}
