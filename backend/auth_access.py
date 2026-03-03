@@ -475,9 +475,13 @@ def install_auth_access_routes(app, get_db, cors, upload_dir):
                 "delivery_status": "sent" if delivery_info["delivered"] else "failed",
                 "delivery_note": delivery_info["note"],
             }
-            if not delivery_info["delivered"] and allow_preview:
+            if allow_preview:
                 response["otp_preview"] = otp["otp_code"]
-                response["otp_note"] = "Provider delivery failed/unavailable. Use OTP preview for testing."
+                response["otp_note"] = (
+                    "OTP preview enabled for testing."
+                    if delivery_info["delivered"]
+                    else "Provider delivery failed/unavailable. Use OTP preview for testing."
+                )
             return cors(
                 response
             )
@@ -599,9 +603,13 @@ def install_auth_access_routes(app, get_db, cors, upload_dir):
                 "delivery_status": "sent" if delivery_info["delivered"] else "failed",
                 "delivery_note": delivery_info["note"],
             }
-            if not delivery_info["delivered"] and allow_preview:
+            if allow_preview:
                 response["otp_preview"] = otp["otp_code"]
-                response["otp_note"] = "Provider delivery failed/unavailable. Use OTP preview for testing."
+                response["otp_note"] = (
+                    "OTP preview enabled for testing."
+                    if delivery_info["delivered"]
+                    else "Provider delivery failed/unavailable. Use OTP preview for testing."
+                )
             return cors(response)
         finally:
             conn.close()
@@ -772,9 +780,13 @@ def install_auth_access_routes(app, get_db, cors, upload_dir):
                 "delivery_status": "sent" if delivery_info["delivered"] else "failed",
                 "delivery_note": delivery_info["note"],
             }
-            if not delivery_info["delivered"] and allow_preview:
+            if allow_preview:
                 response["otp_preview"] = otp["otp_code"]
-                response["otp_note"] = "Provider delivery failed/unavailable. Use OTP preview for testing."
+                response["otp_note"] = (
+                    "OTP preview enabled for testing."
+                    if delivery_info["delivered"]
+                    else "Provider delivery failed/unavailable. Use OTP preview for testing."
+                )
             return cors(response)
         finally:
             conn.close()

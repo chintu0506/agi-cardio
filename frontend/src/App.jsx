@@ -294,6 +294,46 @@ function resolveImageUploadFile(fileOverride, stateFile) {
   return null
 }
 
+function looksLikeHtml(value) {
+  const text = String(value || '').toLowerCase()
+  return text.includes('<!doctype') || text.includes('<html') || text.includes('<body')
+}
+
+function sanitizeInlineText(value, maxLen = 180) {
+  const plain = String(value || '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!plain) return ''
+  if (plain.length <= maxLen) return plain
+  return `${plain.slice(0, maxLen)}...`
+}
+
+function nonJsonResponseMessage(url, text) {
+  const deploymentHint = (!IS_LOCAL_DEV_HOST && !API_BASE_ENV)
+    ? ' Set VITE_API_BASE in Netlify to your backend URL.'
+    : ''
+  if (looksLikeHtml(text)) {
+    return `Server returned HTML instead of JSON for ${url}.${deploymentHint}`
+  }
+  return sanitizeInlineText(text, 220) || 'Non-JSON response from server.'
+}
+
+function normalizeOtpPreview(value) {
+  const text = String(value || '')
+  const match = text.match(/\b\d{4,8}\b/)
+  return match ? match[0] : ''
+}
+
+function normalizeDeliveryNote(value) {
+  const plain = sanitizeInlineText(value, 200)
+  return plain ? ` ${plain}` : ''
+}
+
+function hasOtpInitPayload(data) {
+  return Boolean(data && typeof data === 'object' && String(data.otp_id || '').trim())
+}
+
 async function fetchJsonSafe(url, options) {
   const response = await fetch(url, options)
   const text = await response.text()
@@ -301,7 +341,10 @@ async function fetchJsonSafe(url, options) {
   try {
     data = text ? JSON.parse(text) : null
   } catch {
-    data = { error: text?.slice(0, 220) || 'Non-JSON response from server' }
+    data = {
+      error: nonJsonResponseMessage(url, text),
+      non_json: true,
+    }
   }
   return { response, data }
 }
@@ -312,7 +355,7 @@ async function authJsonWith405Fallback(url, payload) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
-  if (first.response.status !== 405) return first
+  if (first.response.status !== 405 && !first.data?.non_json) return first
   const qs = new URLSearchParams()
   Object.entries(payload || {}).forEach(([k, v]) => {
     if (v !== undefined && v !== null && String(v) !== '') qs.set(k, String(v))
@@ -949,11 +992,13 @@ function App() {
     setOtpSession(null)
     setAuthForm((prev) => ({ ...prev, password: '', reset_password: '' }))
     setError('')
+    setSuccessMessage('')
   }
 
   async function signUp() {
     setAuthLoading(true)
     setError('')
+    setSuccessMessage('')
     try {
       const email = authForm.email.trim()
       const mobile = authForm.mobile.trim()
@@ -969,11 +1014,13 @@ function App() {
       }
       const { response, data } = await authJsonWith405Fallback(`${apiBase}/api/auth/signup/initiate`, payload)
       if (!response.ok) throw new Error(data?.error || 'Signup OTP initiation failed')
-      const preview = data?.otp_preview ? ` OTP: ${data.otp_preview}` : ''
+      if (!hasOtpInitPayload(data)) throw new Error(data?.error || 'Invalid signup OTP response from server.')
+      const previewCode = normalizeOtpPreview(data?.otp_preview)
+      const preview = previewCode ? ` OTP: ${previewCode}` : ''
       const deliveryLabel = data?.delivery || 'channel'
       const statusText = data?.delivery_status === 'sent' ? 'OTP sent' : 'OTP not delivered'
-      const note = data?.delivery_note ? ` ${data.delivery_note}` : ''
-      const canProceedToVerify = data?.delivery_status === 'sent' || Boolean(data?.otp_preview)
+      const note = normalizeDeliveryNote(data?.delivery_note)
+      const canProceedToVerify = data?.delivery_status === 'sent' || Boolean(previewCode)
       if (canProceedToVerify) {
         setOtpSession({
           purpose: 'signup',
@@ -982,7 +1029,8 @@ function App() {
         })
         setAuthForm((prev) => ({ ...prev, password: '' }))
         setAuthStage('otp')
-        setError(`${statusText} via ${deliveryLabel}. Enter OTP to complete registration.${preview}${note}`)
+        setError('')
+        showSuccess(`${statusText} via ${deliveryLabel}. Enter OTP to complete registration.${preview}${note}`)
       } else {
         setAuthStage('credentials')
         setError(`OTP not delivered via ${deliveryLabel}.${note} Configure provider settings and try again.`)
@@ -1029,6 +1077,7 @@ function App() {
   async function login() {
     setAuthLoading(true)
     setError('')
+    setSuccessMessage('')
     try {
       const { response, data } = await fetchJsonSafe(`${apiBase}/api/auth/login`, {
         method: 'POST',
@@ -1052,6 +1101,7 @@ function App() {
   async function forgotPasswordLogin() {
     setAuthLoading(true)
     setError('')
+    setSuccessMessage('')
     try {
       const mobile = authForm.mobile.trim()
       if (!mobile) throw new Error('Enter your registered mobile number.')
@@ -1059,11 +1109,13 @@ function App() {
         mobile,
       })
       if (!response.ok) throw new Error(data?.error || 'Failed to initiate OTP login')
-      const preview = data?.otp_preview ? ` OTP: ${data.otp_preview}` : ''
+      if (!hasOtpInitPayload(data)) throw new Error(data?.error || 'Invalid forgot-password OTP response from server.')
+      const previewCode = normalizeOtpPreview(data?.otp_preview)
+      const preview = previewCode ? ` OTP: ${previewCode}` : ''
       const deliveryLabel = data?.delivery || 'channel'
       const statusText = data?.delivery_status === 'sent' ? 'OTP sent' : 'OTP not delivered'
-      const note = data?.delivery_note ? ` ${data.delivery_note}` : ''
-      const canProceedToVerify = data?.delivery_status === 'sent' || Boolean(data?.otp_preview)
+      const note = normalizeDeliveryNote(data?.delivery_note)
+      const canProceedToVerify = data?.delivery_status === 'sent' || Boolean(previewCode)
       if (canProceedToVerify) {
         setOtpSession({
           purpose: 'forgot_password_login',
@@ -1072,7 +1124,8 @@ function App() {
         })
         setAuthForm((prev) => ({ ...prev, reset_password: '' }))
         setAuthStage('otp')
-        setError(`${statusText} via ${deliveryLabel}. Enter OTP and new password.${preview}${note}`)
+        setError('')
+        showSuccess(`${statusText} via ${deliveryLabel}. Enter OTP and new password.${preview}${note}`)
       } else {
         setAuthStage('credentials')
         setError(`OTP not delivered via ${deliveryLabel}.${note} Configure provider settings and try again.`)
@@ -1110,7 +1163,8 @@ function App() {
         setOtpCode('')
         setOtpSession(null)
         setAuthForm((prev) => ({ ...prev, login: loginHint, password: '' }))
-        setError(`Signup complete. User ID: ${data?.user?.user_id}. Please login with password.`)
+        setError('')
+        showSuccess(`Signup complete. User ID: ${data?.user?.user_id}. Please login with password.`)
       } else if (otpSession.purpose === 'forgot_password_login') {
         const newPassword = authForm.reset_password
         if (!newPassword || newPassword.length < 6) {
@@ -1163,6 +1217,7 @@ function App() {
     }
     setContactUpdateLoading(true)
     setError('')
+    setSuccessMessage('')
     try {
       const { response, data } = await fetchJsonSafe(`${apiBase}/api/auth/contact-update/initiate`, {
         method: 'POST',
@@ -1170,11 +1225,13 @@ function App() {
         body: JSON.stringify({ type: contactType, value }),
       })
       if (!response.ok) throw new Error(data?.error || 'Failed to send OTP for contact update')
-      const preview = data?.otp_preview ? ` OTP: ${data.otp_preview}` : ''
+      if (!hasOtpInitPayload(data)) throw new Error(data?.error || 'Invalid contact update OTP response from server.')
+      const previewCode = normalizeOtpPreview(data?.otp_preview)
+      const preview = previewCode ? ` OTP: ${previewCode}` : ''
       const deliveryLabel = data?.delivery || 'channel'
       const statusText = data?.delivery_status === 'sent' ? 'OTP sent' : 'OTP not delivered'
-      const note = data?.delivery_note ? ` ${data.delivery_note}` : ''
-      const canProceedToVerify = data?.delivery_status === 'sent' || Boolean(data?.otp_preview)
+      const note = normalizeDeliveryNote(data?.delivery_note)
+      const canProceedToVerify = data?.delivery_status === 'sent' || Boolean(previewCode)
       if (canProceedToVerify) {
         setContactUpdateSession({
           type: contactType,
@@ -2208,6 +2265,7 @@ function App() {
       <AuthScreen
         health={health}
         error={error}
+        successMessage={successMessage}
         authMode={authMode}
         authStage={authStage}
         authForm={authForm}

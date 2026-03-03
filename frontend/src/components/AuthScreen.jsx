@@ -1,6 +1,7 @@
 export default function AuthScreen({
   health,
   error,
+  successMessage,
   authMode,
   authStage,
   authForm,
@@ -38,6 +39,7 @@ export default function AuthScreen({
       </header>
 
       {error && <div className="alert">{error}</div>}
+      {successMessage && <div className="alert success">{successMessage}</div>}
 
       <section className="auth-grid">
         <aside className="panel auth-side">
