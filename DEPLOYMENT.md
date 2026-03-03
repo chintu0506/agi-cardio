@@ -32,6 +32,42 @@ Notes:
 - Netlify does not host this long-running Flask + SQLite backend directly.
 - Backend CORS is already enabled for cross-origin frontend calls.
 
+## Railway backend + persistent SQLite
+
+This repo now includes a one-command Railway backend deploy with persistent volume-backed SQLite.
+
+1. Login once:
+
+```bash
+npx --yes @railway/cli login --browserless
+```
+
+2. Link or create Railway project:
+
+```bash
+npx --yes @railway/cli init -n agi-cardio
+# OR
+npx --yes @railway/cli link --project <project-id>
+```
+
+3. Deploy backend + volume:
+
+```bash
+cd /Users/chintuboppana/Downloads/agi-cardio
+./scripts/deploy-railway-backend.sh
+```
+
+The script configures:
+- `AGI_DATA_DIR=/data` (persistent volume mount)
+- `OTP_ALLOW_PREVIEW=true` (for OTP preview testing)
+- backend deploy from `./backend`
+
+4. Connect frontend to backend:
+
+```bash
+./scripts/connect-netlify-to-backend.sh https://<railway-backend-domain>
+```
+
 ## Local/VM deployment from source
 
 1. Copy template:

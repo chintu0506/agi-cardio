@@ -5,10 +5,11 @@ import shutil
 from datetime import datetime
 
 BASE_DIR = os.path.dirname(__file__)
-DB_DIR = os.path.join(BASE_DIR, 'data')
-DB_PATH = os.path.join(DB_DIR, 'cardio.db')
-UPLOAD_DIR = os.path.join(BASE_DIR, 'uploads')
-BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
+DATA_ROOT = os.getenv("AGI_DATA_DIR", BASE_DIR)
+DB_DIR = os.getenv("AGI_DB_DIR", os.path.join(DATA_ROOT, "data"))
+DB_PATH = os.getenv("AGI_DB_PATH", os.path.join(DB_DIR, "cardio.db"))
+UPLOAD_DIR = os.getenv("AGI_UPLOAD_DIR", os.path.join(DATA_ROOT, "uploads"))
+BACKUP_DIR = os.getenv("AGI_BACKUP_DIR", os.path.join(DATA_ROOT, "backups"))
 
 
 def get_db():
@@ -87,6 +88,9 @@ def _migrate_core_indexes(conn):
 
 def init_db():
     os.makedirs(DB_DIR, exist_ok=True)
+    db_parent = os.path.dirname(DB_PATH)
+    if db_parent:
+        os.makedirs(db_parent, exist_ok=True)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     os.makedirs(BACKUP_DIR, exist_ok=True)
     conn = get_db()
