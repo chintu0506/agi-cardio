@@ -5,6 +5,7 @@ import PortalHeader from './components/PortalHeader'
 import CreateProfilePage from './pages/CreateProfilePage'
 
 const API_BASE_ENV = String(import.meta.env.VITE_API_BASE || '').replace(/\/+$/, '')
+const IS_LOCAL_DEV_HOST = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname)
 const LIVE_ECG_REFRESH_MS = 700
 
 const DEFAULT_ECG_PROMPT = {
@@ -396,24 +397,28 @@ async function postImageSummaryWithFieldFallback(url, file, fields, onApiBaseDet
 }
 
 async function discoverBackendBase() {
-  const candidates = [API_BASE_ENV]
-  for (let port = 5000; port <= 5040; port += 1) {
-    const candidate = `http://127.0.0.1:${port}`
-    if (!candidates.includes(candidate)) candidates.push(candidate)
+  const candidates = []
+  if (API_BASE_ENV) candidates.push(API_BASE_ENV)
+  if (!API_BASE_ENV) candidates.push('')
+  if (IS_LOCAL_DEV_HOST) {
+    for (let port = 5000; port <= 5040; port += 1) {
+      const candidate = `http://127.0.0.1:${port}`
+      if (!candidates.includes(candidate)) candidates.push(candidate)
+    }
   }
-  let fallbackBase = null
+  let fallbackBase = API_BASE_ENV || ''
   for (const base of candidates) {
     try {
       const { response, data } = await fetchJsonSafe(`${base}/api/health`)
       if (response.ok && data?.status === 'ok') {
-        if (!fallbackBase) fallbackBase = base
+        fallbackBase = base
         if (data?.image_upload_field_fallback) return base
       }
     } catch {
       // continue
     }
   }
-  return fallbackBase || API_BASE_ENV
+  return fallbackBase
 }
 
 function App() {
@@ -710,7 +715,11 @@ function App() {
       setHealth(null)
       setProfiles([])
       setHistory([])
-      setError(`Cannot connect to API at ${base}. ${e.message}`)
+      const target = base || '(same origin)'
+      const deploymentHint = (!IS_LOCAL_DEV_HOST && !API_BASE_ENV)
+        ? ' Set VITE_API_BASE in Netlify to your backend URL.'
+        : ''
+      setError(`Cannot connect to API at ${target}. ${e.message}${deploymentHint}`)
     }
   }, [activeProfileId, authToken, loadHistory, loadProfiles])
 

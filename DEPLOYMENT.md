@@ -1,5 +1,37 @@
 # Production Deployment
 
+## Netlify frontend + external backend
+
+This app is ready for Netlify as **frontend-only** hosting. The Flask API must run separately (Render/Railway/VM/Fly.io/etc.).
+
+1. Deploy backend first and confirm:
+
+```bash
+GET https://<backend-domain>/api/health
+GET https://<backend-domain>/api/ready
+```
+
+2. On Netlify, import this repository. `netlify.toml` already sets:
+   - Base directory: `frontend`
+   - Build command: `npm ci && npm run build`
+   - Publish directory: `dist`
+
+3. In Netlify Site Settings -> Environment Variables, set:
+
+```bash
+VITE_API_BASE=https://<backend-domain>
+```
+
+4. Trigger deploy and verify in browser dev tools that frontend calls:
+   - `https://<backend-domain>/api/...`
+   - `https://<backend-domain>/uploads/...` (for uploaded files)
+
+5. If backend domain changes, update `VITE_API_BASE` and redeploy.
+
+Notes:
+- Netlify does not host this long-running Flask + SQLite backend directly.
+- Backend CORS is already enabled for cross-origin frontend calls.
+
 ## Local/VM deployment from source
 
 1. Copy template:
