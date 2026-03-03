@@ -313,8 +313,15 @@ function nonJsonResponseMessage(url, text) {
   const deploymentHint = (!IS_LOCAL_DEV_HOST && !API_BASE_ENV)
     ? ' Set VITE_API_BASE in Netlify to your backend URL.'
     : ''
+  let displayUrl = String(url || '')
+  try {
+    const parsed = new URL(displayUrl, typeof window !== 'undefined' ? window.location.origin : 'http://localhost')
+    displayUrl = parsed.pathname || displayUrl
+  } catch {
+    // keep original
+  }
   if (looksLikeHtml(text)) {
-    return `Server returned HTML instead of JSON for ${url}.${deploymentHint}`
+    return `Server returned HTML instead of JSON for ${displayUrl}.${deploymentHint}`
   }
   return sanitizeInlineText(text, 220) || 'Non-JSON response from server.'
 }
@@ -355,7 +362,7 @@ async function authJsonWith405Fallback(url, payload) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
-  if (first.response.status !== 405 && !first.data?.non_json) return first
+  if (first.response.status !== 405) return first
   const qs = new URLSearchParams()
   Object.entries(payload || {}).forEach(([k, v]) => {
     if (v !== undefined && v !== null && String(v) !== '') qs.set(k, String(v))
