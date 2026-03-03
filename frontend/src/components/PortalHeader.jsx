@@ -7,6 +7,9 @@ export default function PortalHeader({
   setPortalPage,
   health,
 }) {
+  const hasNumericAccuracy = Number.isFinite(Number(health?.accuracy))
+  const accuracyLabel = hasNumericAccuracy ? `${Number(health.accuracy)}%` : '--'
+  const systemLabel = health?.status === 'ok' ? 'Online' : 'Checking...'
   const roleLabel = viewerRole === 'doctor' ? 'Doctor View' : 'Patient View'
   const subtitle = viewerRole === 'doctor'
     ? 'Clinical command center for high-confidence decision support'
@@ -44,8 +47,8 @@ export default function PortalHeader({
         </div>
       </div>
       <div className="status-grid">
-        <div className="status-card"><span>System</span><strong>{health?.status === 'ok' ? 'Online' : 'Checking...'}</strong></div>
-        <div className="status-card"><span>Model Accuracy</span><strong>{health ? `${health.accuracy}%` : '--'}</strong></div>
+        <div className="status-card"><span>System</span><strong>{systemLabel}</strong></div>
+        <div className="status-card"><span>Model Accuracy</span><strong>{accuracyLabel}</strong></div>
         <div className="status-card"><span>Current Page</span><strong>{portalPage === 'diagnosis' ? diagnosisStage : portalPage}</strong></div>
         <div className="status-card"><span>Session</span><strong>{viewerRole}</strong></div>
       </div>

@@ -16,6 +16,9 @@ export default function AuthScreen({
   resendOtp,
   setAuthStage,
 }) {
+  const hasNumericAccuracy = Number.isFinite(Number(health?.accuracy))
+  const accuracyLabel = hasNumericAccuracy ? `${Number(health.accuracy)}%` : '--'
+  const systemLabel = health?.status === 'ok' ? 'Online' : 'Checking...'
   const title = authMode === 'signup' ? 'Sign Up' : authMode === 'forgot' ? 'Forgot Password' : 'Login'
   const subtitle = authMode === 'forgot'
     ? 'Use OTP on your mobile and set a new password.'
@@ -29,8 +32,8 @@ export default function AuthScreen({
           <p>Secure doctor and patient portal with OTP-enabled onboarding.</p>
         </div>
         <div className="status-grid">
-          <div className="status-card"><span>System</span><strong>{health?.status === 'ok' ? 'Online' : 'Checking...'}</strong></div>
-          <div className="status-card"><span>Model Accuracy</span><strong>{health ? `${health.accuracy}%` : '--'}</strong></div>
+          <div className="status-card"><span>System</span><strong>{systemLabel}</strong></div>
+          <div className="status-card"><span>Model Accuracy</span><strong>{accuracyLabel}</strong></div>
         </div>
       </header>
 

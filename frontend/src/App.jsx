@@ -162,6 +162,11 @@ function formatDateTime(value) {
   })
 }
 
+function isHealthyApiPayload(data) {
+  if (!data || typeof data !== 'object') return false
+  return data.status === 'ok' && Number.isFinite(Number(data.accuracy))
+}
+
 function getPatientRiskCaption(level) {
   if (level === 'CRITICAL') return 'High-alert risk. Immediate hospital-level care is recommended.'
   if (level === 'HIGH') return 'High risk. Consult cardiology quickly and follow treatment closely.'
@@ -707,6 +712,9 @@ function App() {
     try {
       const { response, data } = await fetchJsonSafe(`${base}/api/health`)
       if (!response.ok) throw new Error(data?.error || `Health check failed (${response.status})`)
+      if (!isHealthyApiPayload(data)) {
+        throw new Error('Health endpoint returned invalid response. Expected JSON with status=ok and numeric accuracy.')
+      }
       setHealth(data)
       if (authToken) {
         await loadProfiles(base)
