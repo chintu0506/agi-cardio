@@ -439,6 +439,9 @@ function App() {
     role: 'patient',
     login: '',
   })
+  const [contactUpdateForm, setContactUpdateForm] = useState({ email: '', mobile: '', otp: '' })
+  const [contactUpdateSession, setContactUpdateSession] = useState(null)
+  const [contactUpdateLoading, setContactUpdateLoading] = useState(false)
   const [profileForm, setProfileForm] = useState(DEFAULT_PROFILE_FORM)
   const [profiles, setProfiles] = useState([])
   const [activeProfileId, setActiveProfileId] = useState('')
@@ -997,6 +1000,8 @@ function App() {
       if (!response.ok) throw new Error(data?.error || 'Login failed')
       setAuthToken(data.token)
       setAuthUser(data.user)
+      setContactUpdateSession(null)
+      setContactUpdateForm({ email: '', mobile: '', otp: '' })
       setViewerRole(data?.user?.role === 'patient' ? 'patient' : 'doctor')
       setPortalPage('workspace')
       setAuthStage('credentials')
@@ -1068,12 +1073,108 @@ function App() {
     }
   }
 
+  async function initiateContactUpdate(type) {
+    if (!authToken) {
+      setError('Login required.')
+      return
+    }
+    const contactType = type === 'mobile' ? 'mobile' : 'email'
+    const value = String(contactUpdateForm[contactType] || '').trim()
+    if (!value) {
+      setError(`Enter new ${contactType} first.`)
+      return
+    }
+    setContactUpdateLoading(true)
+    setError('')
+    try {
+      const { response, data } = await fetchJsonSafe(`${apiBase}/api/auth/contact-update/initiate`, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ type: contactType, value }),
+      })
+      if (!response.ok) throw new Error(data?.error || 'Failed to send OTP for contact update')
+      const preview = data?.otp_preview ? ` OTP: ${data.otp_preview}` : ''
+      const deliveryLabel = data?.delivery || 'channel'
+      const statusText = data?.delivery_status === 'sent' ? 'OTP sent' : 'OTP not delivered'
+      const note = data?.delivery_note ? ` ${data.delivery_note}` : ''
+      const canProceedToVerify = data?.delivery_status === 'sent' || Boolean(data?.otp_preview)
+      if (canProceedToVerify) {
+        setContactUpdateSession({
+          type: contactType,
+          otp_id: data.otp_id,
+          expires_at: data.expires_at,
+          target: data?.delivery_target || value,
+        })
+        setContactUpdateForm((prev) => ({ ...prev, otp: '' }))
+        showSuccess(`${statusText} via ${deliveryLabel}.${preview}${note}`)
+      } else {
+        setContactUpdateSession(null)
+        setError(`OTP not delivered via ${deliveryLabel}.${note} Configure provider settings and retry.`)
+      }
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setContactUpdateLoading(false)
+    }
+  }
+
+  async function verifyContactUpdateOtp() {
+    if (!authToken) {
+      setError('Login required.')
+      return
+    }
+    if (!contactUpdateSession?.otp_id) {
+      setError('No pending contact update OTP session.')
+      return
+    }
+    if (!contactUpdateForm.otp.trim()) {
+      setError('Enter OTP code.')
+      return
+    }
+    setContactUpdateLoading(true)
+    setError('')
+    try {
+      const { response, data } = await fetchJsonSafe(`${apiBase}/api/auth/contact-update/verify`, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          otp_id: contactUpdateSession.otp_id,
+          otp_code: contactUpdateForm.otp.trim(),
+        }),
+      })
+      if (!response.ok) throw new Error(data?.error || 'OTP verification failed')
+      const updatedUser = data?.user || authUser
+      setAuthUser(updatedUser)
+      if (contactUpdateSession.type === 'email') {
+        setContactUpdateForm((prev) => ({ ...prev, email: '', otp: '' }))
+      } else {
+        setContactUpdateForm((prev) => ({ ...prev, mobile: '', otp: '' }))
+      }
+      setContactUpdateSession(null)
+      showSuccess(data?.message || 'Contact updated successfully.')
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setContactUpdateLoading(false)
+    }
+  }
+
+  async function resendContactUpdateOtp() {
+    if (!contactUpdateSession?.type) {
+      setError('No pending contact update OTP session.')
+      return
+    }
+    await initiateContactUpdate(contactUpdateSession.type)
+  }
+
   function logoutAuth() {
     setAuthToken('')
     setAuthUser(null)
     setAuthStage('credentials')
     setOtpCode('')
     setOtpSession(null)
+    setContactUpdateSession(null)
+    setContactUpdateForm({ email: '', mobile: '', otp: '' })
     setDoctorPatientData(null)
     setDoctorAppointments([])
     setDoctorAlerts([])
@@ -2094,6 +2195,46 @@ function App() {
               ? 'Manage profiles, run diagnosis, review and maintain longitudinal records.'
               : 'Create/select your profile and manage appointments and records.'}
           </p>
+
+          <section className="workspace-block">
+            <h3>My Account</h3>
+            <div className="profile-create-grid">
+              <label><span>User ID</span><input value={authUser?.user_id || ''} readOnly disabled /></label>
+              <label><span>Name</span><input value={authUser?.name || ''} readOnly disabled /></label>
+              <label><span>Role</span><input value={authUser?.role || ''} readOnly disabled /></label>
+              <label><span>Email</span><input value={authUser?.email || '-'} readOnly disabled /></label>
+              <label><span>Mobile</span><input value={authUser?.mobile || '-'} readOnly disabled /></label>
+              <label><span>Joined</span><input value={formatDateTime(authUser?.created_at)} readOnly disabled /></label>
+            </div>
+            <div className="profile-create-grid">
+              <label><span>New Email</span><input value={contactUpdateForm.email} onChange={(e) => setContactUpdateForm((prev) => ({ ...prev, email: e.target.value }))} placeholder="new-email@example.com" /></label>
+              <label><span>New Mobile</span><input value={contactUpdateForm.mobile} onChange={(e) => setContactUpdateForm((prev) => ({ ...prev, mobile: e.target.value }))} placeholder="10+ digit mobile" /></label>
+            </div>
+            <div className="actions">
+              <button className="btn" onClick={() => initiateContactUpdate('email')} disabled={contactUpdateLoading}>
+                {contactUpdateLoading && contactUpdateSession?.type === 'email' ? 'Sending OTP...' : 'Change Email (OTP)'}
+              </button>
+              <button className="btn" onClick={() => initiateContactUpdate('mobile')} disabled={contactUpdateLoading}>
+                {contactUpdateLoading && contactUpdateSession?.type === 'mobile' ? 'Sending OTP...' : 'Change Mobile (OTP)'}
+              </button>
+            </div>
+            {contactUpdateSession && (
+              <>
+                <p className="muted">
+                  Verify OTP sent to {contactUpdateSession.target || contactUpdateSession.type} to confirm {contactUpdateSession.type} update.
+                </p>
+                <div className="profile-create-grid">
+                  <label><span>OTP Code</span><input value={contactUpdateForm.otp} onChange={(e) => setContactUpdateForm((prev) => ({ ...prev, otp: e.target.value }))} placeholder="6-digit OTP" /></label>
+                </div>
+                <div className="actions">
+                  <button className="btn primary" onClick={verifyContactUpdateOtp} disabled={contactUpdateLoading}>
+                    {contactUpdateLoading ? 'Verifying...' : 'Verify Contact OTP'}
+                  </button>
+                  <button className="btn" onClick={resendContactUpdateOtp} disabled={contactUpdateLoading}>Resend OTP</button>
+                </div>
+              </>
+            )}
+          </section>
 
           {viewerRole === 'patient' && (
             <>

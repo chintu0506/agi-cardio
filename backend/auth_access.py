@@ -79,13 +79,47 @@ def _user_exists_by_contact(conn, *, email=None, mobile=None):
     return False
 
 
+def _contact_used_by_other_user(conn, *, email=None, mobile=None, exclude_user_id=None):
+    if email:
+        if exclude_user_id:
+            hit = conn.execute(
+                "SELECT 1 FROM users WHERE lower(ifnull(email,'')) = ? AND user_id != ?",
+                (email.lower(), exclude_user_id),
+            ).fetchone()
+        else:
+            hit = conn.execute(
+                "SELECT 1 FROM users WHERE lower(ifnull(email,'')) = ?",
+                (email.lower(),),
+            ).fetchone()
+        if hit:
+            return True
+    mobile_keys = _mobile_variants(mobile)
+    if not mobile_keys:
+        return False
+    if exclude_user_id:
+        rows = conn.execute(
+            "SELECT user_id, mobile FROM users WHERE mobile IS NOT NULL AND user_id != ?",
+            (exclude_user_id,),
+        ).fetchall()
+    else:
+        rows = conn.execute("SELECT user_id, mobile FROM users WHERE mobile IS NOT NULL").fetchall()
+    for row in rows:
+        stored_mobile = row["mobile"]
+        if not stored_mobile:
+            continue
+        stored_keys = _mobile_variants(stored_mobile)
+        if stored_keys.intersection(mobile_keys):
+            return True
+    return False
+
+
 def _find_user_for_login(conn, login_value):
     login = str(login_value or "").strip()
     if not login:
         return None
     login_email = login.lower()
     row = conn.execute(
-        """SELECT user_id, name, email, mobile, password_hash, role
+        """SELECT user_id, name, email, mobile, password_hash, role, created_at
            FROM users WHERE lower(ifnull(email,'')) = ?""",
         (login_email,),
     ).fetchone()
@@ -96,7 +130,7 @@ def _find_user_for_login(conn, login_value):
     if not login_mobile_keys:
         return None
     rows = conn.execute(
-        """SELECT user_id, name, email, mobile, password_hash, role
+        """SELECT user_id, name, email, mobile, password_hash, role, created_at
            FROM users WHERE mobile IS NOT NULL"""
     ).fetchall()
     for candidate in rows:
@@ -478,6 +512,7 @@ def install_auth_access_routes(app, get_db, cors, upload_dir):
                         "email": email,
                         "mobile": mobile,
                         "role": row["role"],
+                        "created_at": created_at,
                     },
                 },
                 201,
@@ -506,6 +541,7 @@ def install_auth_access_routes(app, get_db, cors, upload_dir):
                 "email": row["email"],
                 "mobile": row["mobile"],
                 "role": row["role"],
+                "created_at": row["created_at"],
             }
             SESSIONS[token] = {"user": user, "expires_at": expires_at}
             return cors(
@@ -534,7 +570,158 @@ def install_auth_access_routes(app, get_db, cors, upload_dir):
     @app.route("/api/auth/me", methods=["GET"])
     @auth_required()
     def auth_me():
-        return cors({"user": request.current_user})
+        conn = get_db()
+        try:
+            row = conn.execute(
+                """SELECT user_id, name, email, mobile, role, created_at
+                   FROM users WHERE user_id = ?""",
+                (request.current_user["user_id"],),
+            ).fetchone()
+            if not row:
+                return cors({"error": "User not found."}, 404)
+            user = dict(row)
+            token = _token_from_request()
+            if token and token in SESSIONS:
+                SESSIONS[token]["user"] = user
+            return cors({"user": user})
+        finally:
+            conn.close()
+
+    @app.route("/api/auth/contact-update/initiate", methods=["POST"])
+    @auth_required()
+    def auth_contact_update_initiate():
+        body = request.get_json(silent=True) or {}
+        contact_type = str(body.get("type", "")).strip().lower()
+        value_raw = _clean_optional_contact(body.get("value"))
+        if contact_type not in {"email", "mobile"}:
+            return cors({"error": "type must be 'email' or 'mobile'."}, 400)
+        if not value_raw:
+            return cors({"error": "value is required."}, 400)
+
+        conn = get_db()
+        try:
+            user_id = request.current_user["user_id"]
+            row = conn.execute(
+                "SELECT user_id, email, mobile FROM users WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+            if not row:
+                return cors({"error": "User not found."}, 404)
+
+            target_email = None
+            target_mobile = None
+            if contact_type == "email":
+                target_email = str(value_raw).strip().lower()
+                if not _looks_like_email(target_email):
+                    return cors({"error": "Provide a valid email address."}, 400)
+                current_email = str(row["email"] or "").strip().lower()
+                if target_email == current_email:
+                    return cors({"error": "Email is already your current email."}, 400)
+                if _contact_used_by_other_user(conn, email=target_email, exclude_user_id=user_id):
+                    return cors({"error": "Email is already in use."}, 409)
+            else:
+                target_mobile = _normalize_mobile(value_raw)
+                if len(target_mobile) < 10:
+                    return cors({"error": "Provide a valid mobile number (at least 10 digits)."}, 400)
+                current_mobile = _normalize_mobile(row["mobile"] or "")
+                if target_mobile == current_mobile:
+                    return cors({"error": "Mobile is already your current mobile number."}, 400)
+                if _contact_used_by_other_user(conn, mobile=target_mobile, exclude_user_id=user_id):
+                    return cors({"error": "Mobile number is already in use."}, 409)
+
+            target = target_email or target_mobile
+            otp = _create_otp_record(
+                conn,
+                user_contact=target,
+                purpose="contact_update",
+                ttl_minutes=5,
+                attempts_left=5,
+                user_id=user_id,
+                email=target_email,
+                mobile=target_mobile,
+            )
+            delivery_info = _deliver_otp(
+                email=target_email,
+                mobile=target_mobile,
+                otp_code=otp["otp_code"],
+            )
+            allow_preview = _truthy_env("OTP_ALLOW_PREVIEW", True)
+            response = {
+                "message": f"OTP sent to {target}. Verify to apply contact update.",
+                "otp_id": otp["otp_id"],
+                "expires_at": otp["expires_at"],
+                "type": contact_type,
+                "delivery": delivery_info["delivery"],
+                "delivery_target": target,
+                "delivery_status": "sent" if delivery_info["delivered"] else "failed",
+                "delivery_note": delivery_info["note"],
+            }
+            if not delivery_info["delivered"] and allow_preview:
+                response["otp_preview"] = otp["otp_code"]
+                response["otp_note"] = "Provider delivery failed/unavailable. Use OTP preview for testing."
+            return cors(response)
+        finally:
+            conn.close()
+
+    @app.route("/api/auth/contact-update/verify", methods=["POST"])
+    @auth_required()
+    def auth_contact_update_verify():
+        body = request.get_json(silent=True) or {}
+        otp_id = str(body.get("otp_id", "")).strip()
+        otp_code = str(body.get("otp_code", "")).strip()
+        if not otp_id or not otp_code:
+            return cors({"error": "otp_id and otp_code are required."}, 400)
+
+        conn = get_db()
+        try:
+            row, err = _verify_otp_record(conn, otp_id=otp_id, otp_code=otp_code, purpose="contact_update")
+            if err:
+                return cors({"error": err}, 400)
+            user_id = request.current_user["user_id"]
+            otp_user_id = str(row["user_id"] or "").strip()
+            if otp_user_id != user_id:
+                return cors({"error": "OTP session does not belong to current user."}, 403)
+
+            target_email = _clean_optional_contact(row["email"])
+            if target_email:
+                target_email = target_email.lower()
+            target_mobile = _normalize_mobile(_clean_optional_contact(row["mobile"]))
+            if not target_mobile:
+                target_mobile = None
+            if not target_email and not target_mobile:
+                return cors({"error": "OTP session has no pending contact update."}, 400)
+
+            if target_email and _contact_used_by_other_user(conn, email=target_email, exclude_user_id=user_id):
+                return cors({"error": "Email is already in use."}, 409)
+            if target_mobile and _contact_used_by_other_user(conn, mobile=target_mobile, exclude_user_id=user_id):
+                return cors({"error": "Mobile number is already in use."}, 409)
+
+            if target_email:
+                conn.execute("UPDATE users SET email = ? WHERE user_id = ?", (target_email, user_id))
+            if target_mobile:
+                conn.execute("UPDATE users SET mobile = ? WHERE user_id = ?", (target_mobile, user_id))
+            conn.execute("DELETE FROM otp_codes WHERE otp_id = ?", (otp_id,))
+
+            refreshed = conn.execute(
+                """SELECT user_id, name, email, mobile, role, created_at
+                   FROM users WHERE user_id = ?""",
+                (user_id,),
+            ).fetchone()
+            if not refreshed:
+                conn.rollback()
+                return cors({"error": "User not found after contact update."}, 404)
+            conn.commit()
+
+            refreshed_user = dict(refreshed)
+            for token, sess in list(SESSIONS.items()):
+                sess_user = sess.get("user", {})
+                if str(sess_user.get("user_id")) == user_id:
+                    sess["user"] = refreshed_user.copy()
+                    SESSIONS[token] = sess
+
+            return cors({"message": "Contact updated successfully.", "user": refreshed_user})
+        finally:
+            conn.close()
 
     @app.route("/api/doctors", methods=["GET"])
     @auth_required()

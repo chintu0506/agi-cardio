@@ -93,6 +93,21 @@ class PatientE2EFlowTests(unittest.TestCase):
         self.assertTrue(login_payload.get("token"))
         return login_payload
 
+    def _resolve_otp_code(self, otp_id, payload):
+        otp_code = payload.get("otp_preview")
+        if otp_code:
+            return otp_code
+        conn = storage.get_db()
+        try:
+            row = conn.execute(
+                "SELECT otp_code FROM otp_codes WHERE otp_id = ?",
+                (otp_id,),
+            ).fetchone()
+            self.assertIsNotNone(row)
+            return row["otp_code"]
+        finally:
+            conn.close()
+
     def test_patient_profile_diagnosis_history_workflow(self):
         login_payload = self._signup_verify_login(
             name="E2E Patient",
@@ -176,6 +191,77 @@ class PatientE2EFlowTests(unittest.TestCase):
         user = me.get_json()["user"]
         self.assertEqual(user["role"], "patient")
         self.assertTrue(str(user.get("mobile") or "").endswith("7777666655"))
+
+    def test_contact_update_via_otp_for_email_and_mobile(self):
+        login_payload = self._signup_verify_login(
+            name="Contact Update Patient",
+            email="contact.old@example.com",
+            mobile="919999000111",
+            password="pass1234",
+            role="patient",
+        )
+        token = login_payload["token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        new_email = "contact.new@example.com"
+        init_email = self.client.post(
+            "/api/auth/contact-update/initiate",
+            headers={**headers, "Content-Type": "application/json"},
+            json={"type": "email", "value": new_email},
+        )
+        self.assertEqual(init_email.status_code, 200, init_email.get_data(as_text=True))
+        init_email_payload = init_email.get_json()
+        email_otp_id = init_email_payload.get("otp_id")
+        self.assertTrue(email_otp_id)
+        email_otp = self._resolve_otp_code(email_otp_id, init_email_payload)
+
+        verify_email = self.client.post(
+            "/api/auth/contact-update/verify",
+            headers={**headers, "Content-Type": "application/json"},
+            json={"otp_id": email_otp_id, "otp_code": email_otp},
+        )
+        self.assertEqual(verify_email.status_code, 200, verify_email.get_data(as_text=True))
+        self.assertEqual(verify_email.get_json()["user"]["email"], new_email)
+
+        me_after_email = self.client.get("/api/auth/me", headers=headers)
+        self.assertEqual(me_after_email.status_code, 200)
+        self.assertEqual(me_after_email.get_json()["user"]["email"], new_email)
+
+        login_new_email = self.client.post(
+            "/api/auth/login",
+            json={"login": new_email, "password": "pass1234"},
+        )
+        self.assertEqual(login_new_email.status_code, 200, login_new_email.get_data(as_text=True))
+
+        new_mobile = "919888777666"
+        init_mobile = self.client.post(
+            "/api/auth/contact-update/initiate",
+            headers={**headers, "Content-Type": "application/json"},
+            json={"type": "mobile", "value": new_mobile},
+        )
+        self.assertEqual(init_mobile.status_code, 200, init_mobile.get_data(as_text=True))
+        init_mobile_payload = init_mobile.get_json()
+        mobile_otp_id = init_mobile_payload.get("otp_id")
+        self.assertTrue(mobile_otp_id)
+        mobile_otp = self._resolve_otp_code(mobile_otp_id, init_mobile_payload)
+
+        verify_mobile = self.client.post(
+            "/api/auth/contact-update/verify",
+            headers={**headers, "Content-Type": "application/json"},
+            json={"otp_id": mobile_otp_id, "otp_code": mobile_otp},
+        )
+        self.assertEqual(verify_mobile.status_code, 200, verify_mobile.get_data(as_text=True))
+        self.assertEqual(verify_mobile.get_json()["user"]["mobile"], new_mobile)
+
+        me_after_mobile = self.client.get("/api/auth/me", headers=headers)
+        self.assertEqual(me_after_mobile.status_code, 200)
+        self.assertEqual(me_after_mobile.get_json()["user"]["mobile"], new_mobile)
+
+        login_new_mobile = self.client.post(
+            "/api/auth/login",
+            json={"login": new_mobile, "password": "pass1234"},
+        )
+        self.assertEqual(login_new_mobile.status_code, 200, login_new_mobile.get_data(as_text=True))
 
 
 if __name__ == "__main__":
