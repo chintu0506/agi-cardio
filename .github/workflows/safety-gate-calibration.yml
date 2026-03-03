@@ -28,6 +28,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
 
+      - name: Materialize model artifacts for CI
+        run: |
+          if [ ! -f backend/models/master_model.pkl ]; then
+            python backend/train_model.py
+          fi
+
       - name: Run safety gate calibration tests
         run: python -m unittest backend/tests/test_safety_gate_calibration.py
 
