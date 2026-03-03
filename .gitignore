@@ -37,3 +37,6 @@ backend/models/eval_report.json
 .autosync.pid
 .autosync.log
 .autosync.pause
+
+# Local Netlify folder
+.netlify
